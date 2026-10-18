@@ -1,0 +1,1 @@
+"""Inisialisasi paket modul app."""

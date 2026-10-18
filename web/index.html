@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Silvia – Avatar AI Suara</title>
+<meta name="description" content="Avatar AI percakapan Jepang interaktif dengan model VRM 3D.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+
+<!-- Import map CDN (versi dikunci, jangan ganti ke @latest) -->
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/",
+    "@pixiv/three-vrm": "https://cdn.jsdelivr.net/npm/@pixiv/three-vrm@3.5.5/lib/three-vrm.module.min.js",
+    "@pixiv/three-vrm-animation": "https://cdn.jsdelivr.net/npm/@pixiv/three-vrm-animation@3.5.5/lib/three-vrm-animation.module.min.js"
+  }
+}
+</script>
+</head>
+<body>
+
+<div id="app">
+  <!-- Kanvas Three.js -->
+  <div id="canvas-wrap"></div>
+
+  <!-- Overlay Mulai (diperlukan untuk membuka AudioContext) -->
+  <div id="overlay-start">
+    <h1>Silvia</h1>
+    <p>Avatar AI percakapan bahasa Jepang.<br>Pastikan headset terpasang agar tidak ada gema.</p>
+    <button id="btn-start">Mulai Berbicara ✦</button>
+    <div id="start-status" style="font-size:12px;color:var(--muted);margin-top:8px"></div>
+  </div>
+
+  <!-- Status + Subtitle -->
+  <div id="hud-bottom">
+    <div id="status-pill" data-state="disconnected">
+      <span id="status-dot"></span>
+      <span id="status-text">Menghubungkan...</span>
+    </div>
+    <div id="user-text"></div>
+    <div id="subtitle">
+      <div id="subtitle-jp"></div>
+      <div id="subtitle-id"></div>
+    </div>
+  </div>
+
+  <!-- Input teks (alternatif mic) -->
+  <div id="text-input-wrap">
+    <input id="text-input" type="text" placeholder="Ketik pesan dan tekan Enter..." autocomplete="off" />
+    <button id="btn-send">Kirim</button>
+  </div>
+
+  <!-- Tombol buka/tutup panel uji -->
+  <button id="btn-debug-toggle" title="Panel Uji (D)">D</button>
+
+  <!-- Panel uji -->
+  <div id="debug-panel" class="hidden">
+    <div id="debug-panel-inner">
+      <div class="dbg-section">
+        <h3>Animasi</h3>
+        <div id="anim-btns" class="btn-grid">
+          <span style="font-size:12px;color:var(--muted)">Muat model untuk menampilkan...</span>
+        </div>
+      </div>
+
+      <div class="dbg-section">
+        <h3>Ekspresi / Emosi</h3>
+        <div id="emotion-btns" class="btn-grid">
+          <span style="font-size:12px;color:var(--muted)">Muat model untuk menampilkan...</span>
+        </div>
+      </div>
+
+      <div class="dbg-section">
+        <h3>Slider Mulut (aa)</h3>
+        <div class="dbg-slider-wrap">
+          <div class="dbg-slider-label">
+            <span>aa</span><span id="mouth-val">0%</span>
+          </div>
+          <input id="mouth-slider" type="range" min="0" max="100" value="0">
+        </div>
+      </div>
+
+      <div class="dbg-section">
+        <h3>Kontrol Subtitle</h3>
+        <div class="btn-grid">
+          <button class="dbg-btn" id="btn-toggle-id">Sembunyikan terjemahan</button>
+        </div>
+      </div>
+
+      <div id="missing-anim-section" class="dbg-section" style="display:none">
+        <h3 style="color:var(--warn)">Animasi Tidak Ditemukan</h3>
+        <div id="missing-anim-list" style="font-size:12px;color:var(--muted);line-height:1.8"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast error -->
+  <div id="toast"></div>
+</div>
+
+<script type="module" src="main.js"></script>
+</body>
+</html>

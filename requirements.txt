@@ -1,0 +1,17 @@
+faster-whisper
+silero-vad
+sounddevice
+numpy
+pygame
+edge-tts
+openai
+python-dotenv
+fastapi
+uvicorn[standard]
+
+# PyTorch (dibutuhkan Silero VAD) -> pasang terpisah, contoh untuk CUDA 12.1:
+#   pip install torch --index-url https://download.pytorch.org/whl/cu121
+#
+# Agar faster-whisper bisa memakai GPU (jika error cuBLAS/cuDNN):
+#   pip install nvidia-cublas-cu12 nvidia-cudnn-cu12
+# Kalau GPU gagal, skrip otomatis pindah ke CPU int8.

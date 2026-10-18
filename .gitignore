@@ -1,0 +1,29 @@
+# Environment variables
+.env
+.env*.local
+.env.*
+
+# Python virtual environment
+.venv/
+venv/
+ENV/
+env/
+
+# Python bytecode & cache
+__pycache__/
+*/__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# Audio / temporary output
+*.wav
+*.mp3
+
+# Editor / IDE
+.vscode/
+.idea/
+
+# OS generated files
+.DS_Store
+Thumbs.db
