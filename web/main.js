@@ -31,10 +31,10 @@ const BLINK_INTERVAL_MIN = 2.5;      // interval kedip min (detik)
 const BLINK_INTERVAL_MAX = 5.5;      // interval kedip max (detik)
 const BLINK_DURATION = 0.15;         // durasi kedip (detik)
 const MOUTH_NOISE_GATE = 0.015;      // ambang bawah lip-sync
-const MOUTH_GAIN = 1.5;              // penguatan amplitudo -> bobot mulut
+const MOUTH_GAIN = 2.2;              // penguatan amplitudo -> bobot mulut
 const MOUTH_MAX = 0.7;               // batas atas bobot mulut
-const MOUTH_RISE = 15.0;            // kecepatan naik mulut (per detik)
-const MOUTH_FALL = 5.0;             // kecepatan turun mulut (per detik)
+const MOUTH_RISE  = 15.0;            // kecepatan naik mulut (per detik)
+const MOUTH_FALL  = 5.0;             // kecepatan turun mulut (per detik)
 const EXPR_RETURN_DELAY = 0.6;       // detik setelah audio selesai baru balik neutral
 
 // ============================================================
@@ -238,7 +238,7 @@ function createIdleAction() {
   const larmQ = new THREE.Quaternion().setFromEuler(new THREE.Euler(0.08, 0.05, -1.15));
   const rarmQ = new THREE.Quaternion().setFromEuler(new THREE.Euler(0.08, -0.05, 1.15));
   const lforeQ = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, -0.25));
-  const rforeQ = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, 0.25));
+  const rforeQ = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0,  0.25));
 
   const staticArr = (q) => [q.x, q.y, q.z, q.w, q.x, q.y, q.z, q.w];
 
@@ -247,8 +247,8 @@ function createIdleAction() {
   const lfore = boneTrack('leftLowerArm', [0, T], staticArr(lforeQ));
   const rfore = boneTrack('rightLowerArm', [0, T], staticArr(rforeQ));
 
-  if (larm) tracks.push(larm);
-  if (rarm) tracks.push(rarm);
+  if (larm)  tracks.push(larm);
+  if (rarm)  tracks.push(rarm);
   if (lfore) tracks.push(lfore);
   if (rfore) tracks.push(rfore);
 
@@ -413,7 +413,7 @@ function updateExpressions(dt) {
     const cur = currentExprWeights[expr];
     const next = cur + (target - cur) * Math.min(1, EXPR_LERP_SPEED * dt);
     currentExprWeights[expr] = next;
-    try { em.setValue(expr, next); } catch (_) { }
+    try { em.setValue(expr, next); } catch (_) {}
   }
 }
 
@@ -570,6 +570,9 @@ function handleWSMessage(msg) {
     case 'error':
       showToast(msg.message);
       break;
+    case 'stats':
+      updatePerfStats(msg);
+      break;
   }
 }
 
@@ -637,15 +640,15 @@ function sendWS(msg) {
 // ============================================================
 const statusPill = document.getElementById('status-pill');
 const statusText = document.getElementById('status-text');
-const subtitleJp = document.getElementById('subtitle-jp');
-const subtitleId = document.getElementById('subtitle-id');
-const userTextEl = document.getElementById('user-text');
+const subtitleJp  = document.getElementById('subtitle-jp');
+const subtitleId  = document.getElementById('subtitle-id');
+const userTextEl  = document.getElementById('user-text');
 
 const STATUS_LABELS = {
-  listening: 'Mendengarkan...',
+  listening:    'Mendengarkan...',
   transcribing: 'Mentranskripsi...',
-  thinking: 'Berpikir...',
-  speaking: 'Berbicara...',
+  thinking:     'Berpikir...',
+  speaking:     'Berbicara...',
   disconnected: 'Terputus – menyambung kembali...',
 };
 
@@ -760,12 +763,129 @@ textInput.addEventListener('keydown', (e) => {
 });
 
 // ============================================================
+// Pemantau Sumber Daya PC & FPS Live (Pojok Kiri Atas)
+// ============================================================
+const perfWidget = document.getElementById('perf-monitor');
+const btnTogglePerf = document.getElementById('btn-toggle-perf');
+const perfToggleIcon = document.getElementById('perf-toggle-icon');
+const perfCpuVal = document.getElementById('perf-cpu-val');
+const perfCpuBar = document.getElementById('perf-cpu-bar');
+const perfRamVal = document.getElementById('perf-ram-val');
+const perfRamBar = document.getElementById('perf-ram-bar');
+const perfGpuRow = document.getElementById('perf-gpu-row');
+const perfGpuName = document.getElementById('perf-gpu-name');
+const perfGpuVal = document.getElementById('perf-gpu-val');
+const perfGpuBar = document.getElementById('perf-gpu-bar');
+const perfVramRow = document.getElementById('perf-vram-row');
+const perfVramVal = document.getElementById('perf-vram-val');
+const perfVramBar = document.getElementById('perf-vram-bar');
+const perfFpsVal = document.getElementById('perf-fps-val');
+const perfTempBadge = document.getElementById('perf-temp-badge');
+const perfTempVal = document.getElementById('perf-temp-val');
+
+function setBarColor(barElem, percent) {
+  if (!barElem) return;
+  barElem.classList.remove('warn', 'danger');
+  if (percent >= 90) {
+    barElem.classList.add('danger');
+  } else if (percent >= 75) {
+    barElem.classList.add('warn');
+  }
+}
+
+function updatePerfStats(stats) {
+  if (!stats) return;
+
+  // CPU
+  if (stats.cpu) {
+    const cpuPct = Math.round(stats.cpu.percent || 0);
+    perfCpuVal.textContent = `${cpuPct}%`;
+    perfCpuBar.style.width = `${Math.min(100, cpuPct)}%`;
+    setBarColor(perfCpuBar, cpuPct);
+  }
+
+  // RAM
+  if (stats.ram) {
+    const ramPct = Math.round(stats.ram.percent || 0);
+    perfRamVal.textContent = `${stats.ram.used_gb} / ${stats.ram.total_gb} GB (${ramPct}%)`;
+    perfRamBar.style.width = `${Math.min(100, ramPct)}%`;
+    setBarColor(perfRamBar, ramPct);
+  }
+
+  // GPU & VRAM
+  if (stats.gpu) {
+    perfGpuRow.style.display = '';
+    perfVramRow.style.display = '';
+
+    if (stats.gpu.name) {
+      // Potong nama singkat (misal RTX 4050)
+      const shortName = stats.gpu.name.replace(/NVIDIA\s+/i, '').replace(/Laptop GPU/i, 'Mobile');
+      perfGpuName.textContent = shortName;
+      perfGpuName.title = stats.gpu.name;
+    }
+
+    const gpuPct = Math.round(stats.gpu.load || 0);
+    perfGpuVal.textContent = `${gpuPct}%`;
+    perfGpuBar.style.width = `${Math.min(100, gpuPct)}%`;
+    setBarColor(perfGpuBar, gpuPct);
+
+    const vramUsed = Math.round(stats.gpu.vram_used_mb || 0);
+    const vramTotal = Math.round(stats.gpu.vram_total_mb || 0);
+    const vramPct = Math.round(stats.gpu.vram_percent || 0);
+    perfVramVal.textContent = `${vramUsed} / ${vramTotal} MB (${vramPct}%)`;
+    perfVramBar.style.width = `${Math.min(100, vramPct)}%`;
+    setBarColor(perfVramBar, vramPct);
+
+    if (stats.gpu.temp !== undefined && stats.gpu.temp !== null) {
+      perfTempBadge.style.display = '';
+      perfTempVal.textContent = `${Math.round(stats.gpu.temp)}°C`;
+    }
+  } else {
+    // Sembunyikan GPU rows jika tidak ada GPU NVIDIA terdeteksi
+    perfGpuRow.style.display = 'none';
+    perfVramRow.style.display = 'none';
+    perfTempBadge.style.display = 'none';
+  }
+}
+
+// Toggle minimize/expand monitor
+if (btnTogglePerf) {
+  btnTogglePerf.onclick = () => {
+    const isCollapsed = perfWidget.classList.toggle('collapsed');
+    perfToggleIcon.textContent = isCollapsed ? '+' : '−';
+  };
+}
+
+// Shortcut keyboard 'M' untuk toggle monitor hardware
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'm' || e.key === 'M') {
+    if (['INPUT', 'TEXTAREA'].includes(e.target.tagName)) return;
+    const isCollapsed = perfWidget.classList.toggle('collapsed');
+    perfToggleIcon.textContent = isCollapsed ? '+' : '−';
+  }
+});
+
+// Hitungan FPS
+let frameCount = 0;
+let lastFpsTime = performance.now();
+
+// ============================================================
 // Render Loop
 // ============================================================
 const clock = new THREE.Clock();
 
 renderer.setAnimationLoop(() => {
   const dt = clock.getDelta();
+
+  // Hitung FPS
+  frameCount++;
+  const now = performance.now();
+  if (now - lastFpsTime >= 1000) {
+    const fps = Math.round((frameCount * 1000) / (now - lastFpsTime));
+    perfFpsVal.textContent = fps;
+    frameCount = 0;
+    lastFpsTime = now;
+  }
 
   // 1. Update mixer animasi VRMA/idle
   if (mixer) mixer.update(dt);
@@ -839,6 +959,12 @@ async function init() {
 
   // Build panel uji
   buildDebugPanel();
+
+  // Ambil data stats awal secara cepat
+  fetch('/api/stats')
+    .then((r) => r.json())
+    .then((stats) => updatePerfStats(stats))
+    .catch(() => {});
 
   // Hubungkan WebSocket
   connectWS();

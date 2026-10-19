@@ -11,9 +11,12 @@ import json
 import sys
 import threading
 import time
+import shutil
+import subprocess
 from pathlib import Path
 from typing import Optional, Set
 
+import psutil
 import uvicorn
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
@@ -123,6 +126,67 @@ class ConnectionManager:
             self._playback_event.set()
 
 
+# Inisialisasi hitungan CPU awal
+psutil.cpu_percent(interval=None)
+
+
+def get_system_stats() -> dict:
+    """Mengambil metrik performa CPU, RAM, dan GPU/VRAM secara aman."""
+    try:
+        vm = psutil.virtual_memory()
+        cpu_usage = psutil.cpu_percent(interval=None)
+        stats = {
+            "type": "stats",
+            "cpu": {
+                "percent": cpu_usage,
+                "count": psutil.cpu_count(logical=True),
+            },
+            "ram": {
+                "percent": vm.percent,
+                "used_gb": round(vm.used / (1024**3), 2),
+                "total_gb": round(vm.total / (1024**3), 2),
+            },
+            "gpu": None,
+        }
+
+        # Cek NVIDIA GPU / VRAM via nvidia-smi
+        if shutil.which("nvidia-smi"):
+            try:
+                # 0x08000000 = CREATE_NO_WINDOW agar tidak muncul cmd pop-up di Windows
+                flags = 0x08000000 if sys.platform == "win32" else 0
+                res = subprocess.check_output(
+                    [
+                        "nvidia-smi",
+                        "--query-gpu=name,utilization.gpu,memory.used,memory.total,temperature.gpu",
+                        "--format=csv,noheader,nounits",
+                    ],
+                    creationflags=flags,
+                    timeout=1.0,
+                ).decode("utf-8", errors="ignore").strip()
+
+                if res:
+                    first_line = res.splitlines()[0]
+                    parts = [p.strip() for p in first_line.split(",")]
+                    if len(parts) >= 5:
+                        used_mb = float(parts[2])
+                        total_mb = float(parts[3])
+                        pct = round((used_mb / total_mb * 100), 1) if total_mb > 0 else 0.0
+                        stats["gpu"] = {
+                            "name": parts[0],
+                            "load": float(parts[1]),
+                            "vram_used_mb": used_mb,
+                            "vram_total_mb": total_mb,
+                            "vram_percent": pct,
+                            "temp": float(parts[4]),
+                        }
+            except Exception:
+                pass
+
+        return stats
+    except Exception as e:
+        return {"type": "stats", "error": str(e)}
+
+
 manager = ConnectionManager()
 
 
@@ -136,6 +200,10 @@ WEB_DIR = Path(__file__).resolve().parent.parent / "web"
 @app.get("/api/config")
 async def api_config():
     return JSONResponse(build_config_data())
+
+@app.get("/api/stats")
+async def api_stats():
+    return JSONResponse(get_system_stats())
 
 @app.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket):
@@ -309,11 +377,23 @@ def run_web():
     )
     server = uvicorn.Server(config)
 
+    async def system_stats_task():
+        """Mengirim data live stats CPU, RAM, GPU/VRAM ke semua klien web tiap 1 detik."""
+        while voice_loop_state.get("running", True):
+            if manager.active:
+                stats = await asyncio.to_thread(get_system_stats)
+                await manager.broadcast(stats)
+            await asyncio.sleep(1.0)
+
     async def serve():
         voice_thread.start()
+        stats_bg_task = asyncio.create_task(system_stats_task())
         print("\n[WEB] Server berjalan di http://127.0.0.1:8000")
         print("[WEB] Buka browser, lalu tekan Ctrl+C untuk keluar.\n")
-        await server.serve()
+        try:
+            await server.serve()
+        finally:
+            stats_bg_task.cancel()
 
     try:
         loop.run_until_complete(serve())

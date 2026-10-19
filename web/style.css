@@ -356,3 +356,174 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 }
 
 #toast.visible { opacity: 1; }
+
+/* ============================================================
+   Live Hardware / PC Resource Monitor (Pojok Kiri Atas)
+   ============================================================ */
+.perf-widget {
+  position: fixed;
+  top: 16px;
+  left: 16px;
+  z-index: 20;
+  width: 210px;
+  background: rgba(13, 16, 24, 0.78);
+  border: 1px solid rgba(122, 167, 255, 0.18);
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  padding: 10px 12px;
+  font-family: 'Inter', system-ui, sans-serif;
+  color: var(--text);
+  user-select: none;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  pointer-events: auto;
+}
+
+.perf-widget:hover {
+  border-color: rgba(122, 167, 255, 0.35);
+  box-shadow: 0 10px 36px rgba(0, 0, 0, 0.55);
+}
+
+.perf-widget.collapsed {
+  width: auto;
+  padding: 8px 12px;
+}
+
+.perf-widget.collapsed .perf-body {
+  display: none;
+}
+
+.perf-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.perf-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.perf-pulse {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background-color: var(--success);
+  box-shadow: 0 0 8px var(--success);
+  animation: perfPulseAnim 2s infinite ease-in-out;
+}
+
+@keyframes perfPulseAnim {
+  0%, 100% { transform: scale(0.9); opacity: 0.7; }
+  50% { transform: scale(1.25); opacity: 1; }
+}
+
+.perf-title {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  text-transform: uppercase;
+}
+
+.perf-toggle-btn {
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 2px 5px;
+  border-radius: 4px;
+  transition: color var(--trans), background var(--trans);
+}
+
+.perf-toggle-btn:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.perf-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.perf-row {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.perf-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 11px;
+}
+
+.perf-label {
+  font-weight: 600;
+  color: #a0aec0;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 90px;
+}
+
+.perf-value {
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  font-size: 10.5px;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.perf-bar-bg {
+  width: 100%;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.07);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.perf-bar-fill {
+  height: 100%;
+  width: 0%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #7aa7ff, #4f7be0);
+  transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.3s;
+}
+
+/* Status level warna untuk load tinggi */
+.perf-bar-fill.warn {
+  background: linear-gradient(90deg, #ffc96b, #e5a43b);
+}
+
+.perf-bar-fill.danger {
+  background: linear-gradient(90deg, #ff7a85, #e04855);
+}
+
+.perf-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: 4px;
+  margin-top: 2px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  font-size: 10.5px;
+}
+
+.perf-badge {
+  font-size: 10px;
+  color: var(--muted);
+  font-family: 'SFMono-Regular', Consolas, monospace;
+}
+
+.perf-badge strong {
+  color: var(--accent);
+  font-weight: 600;
+}

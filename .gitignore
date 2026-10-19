@@ -1,29 +1,79 @@
-# Environment variables
+# ==========================================
+# Environment variables & Secrets
+# ==========================================
 .env
 .env*.local
 .env.*
 
+# ==========================================
 # Python virtual environment
+# ==========================================
 .venv/
 venv/
 ENV/
 env/
 
+# ==========================================
 # Python bytecode & cache
+# ==========================================
 __pycache__/
 */__pycache__/
 *.py[cod]
 *$py.class
-.pytest_cache/
+*.so
+.mypy_cache/
+.ruff_cache/
 
-# Audio / temporary output
+# ==========================================
+# Testing & Coverage
+# ==========================================
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+nosetests.xml
+coverage.xml
+*.cover
+
+# ==========================================
+# Logs & Agent Runtime Output
+# ==========================================
+*.log
+agent/logs/*
+!agent/logs/.gitkeep
+
+# ==========================================
+# Agent Workspace (File yang dibuat pengguna)
+# ==========================================
+agent/workspace/*
+!agent/workspace/.gitkeep
+
+# ==========================================
+# Audio / Temporary Output
+# ==========================================
 *.wav
 *.mp3
+*.ogg
+*.flac
 
-# Editor / IDE
+# ==========================================
+# Editor & IDE
+# ==========================================
 .vscode/
 .idea/
+*.sublime-project
+*.sublime-workspace
+*.swp
+*.swo
 
+# ==========================================
 # OS generated files
+# ==========================================
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
 Thumbs.db
+desktop.ini

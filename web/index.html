@@ -36,6 +36,71 @@
     <div id="start-status" style="font-size:12px;color:var(--muted);margin-top:8px"></div>
   </div>
 
+  <!-- Live Hardware / PC Resource Monitor (Pojok Kiri Atas) -->
+  <aside id="perf-monitor" class="perf-widget" aria-label="Pemantau Sumber Daya PC">
+    <div class="perf-header">
+      <div class="perf-title-wrap">
+        <span class="perf-pulse"></span>
+        <span class="perf-title">SISTEM LIVE</span>
+      </div>
+      <button id="btn-toggle-perf" class="perf-toggle-btn" title="Kecilkan/Perluas Panel (M)" aria-label="Toggle Tampilan">
+        <span id="perf-toggle-icon">−</span>
+      </button>
+    </div>
+
+    <div id="perf-body" class="perf-body">
+      <!-- CPU Metric -->
+      <div class="perf-row">
+        <div class="perf-meta">
+          <span class="perf-label">CPU</span>
+          <span class="perf-value" id="perf-cpu-val">--%</span>
+        </div>
+        <div class="perf-bar-bg">
+          <div class="perf-bar-fill" id="perf-cpu-bar" style="width: 0%"></div>
+        </div>
+      </div>
+
+      <!-- RAM Metric -->
+      <div class="perf-row">
+        <div class="perf-meta">
+          <span class="perf-label">RAM</span>
+          <span class="perf-value" id="perf-ram-val">-- / -- GB</span>
+        </div>
+        <div class="perf-bar-bg">
+          <div class="perf-bar-fill" id="perf-ram-bar" style="width: 0%"></div>
+        </div>
+      </div>
+
+      <!-- GPU Core Metric -->
+      <div class="perf-row" id="perf-gpu-row">
+        <div class="perf-meta">
+          <span class="perf-label" id="perf-gpu-name" title="NVIDIA GPU">GPU</span>
+          <span class="perf-value" id="perf-gpu-val">--%</span>
+        </div>
+        <div class="perf-bar-bg">
+          <div class="perf-bar-fill" id="perf-gpu-bar" style="width: 0%"></div>
+        </div>
+      </div>
+
+      <!-- VRAM Metric -->
+      <div class="perf-row" id="perf-vram-row">
+        <div class="perf-meta">
+          <span class="perf-label">VRAM</span>
+          <span class="perf-value" id="perf-vram-val">-- / -- MB</span>
+        </div>
+        <div class="perf-bar-bg">
+          <div class="perf-bar-fill" id="perf-vram-bar" style="width: 0%"></div>
+        </div>
+      </div>
+
+      <!-- Footer Info (GPU Temp & FPS) -->
+      <div class="perf-footer">
+        <span id="perf-fps-badge" class="perf-badge">FPS: <strong id="perf-fps-val">--</strong></span>
+        <span id="perf-temp-badge" class="perf-badge" style="display:none">GPU: <strong id="perf-temp-val">--°C</strong></span>
+      </div>
+    </div>
+  </aside>
+
   <!-- Status + Subtitle -->
   <div id="hud-bottom">
     <div id="status-pill" data-state="disconnected">

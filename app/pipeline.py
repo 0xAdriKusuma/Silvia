@@ -16,6 +16,13 @@ from app.llm import load_system_prompt
 from app.tts import parse_line, synth
 from app.sinks import BaseSink, ConsoleSink
 
+# Import agent (opsional — dinonaktifkan jika modul tidak tersedia)
+try:
+    import agent as _agent
+    _AGENT_AVAILABLE = True
+except ImportError:
+    _AGENT_AVAILABLE = False
+
 
 async def respond(
     client: AsyncOpenAI,
@@ -39,9 +46,53 @@ async def respond(
         if hasattr(sink, "reset_timer"):
             sink.reset_timer()
 
+    # ---- Panggil agent sebelum LLM persona ----
+    extra_system_msg: str | None = None
+    agent_result = None
+    if _AGENT_AVAILABLE:
+        try:
+            # Callback status: kirim "thinking" ke sink saat agent bekerja
+            async def _agent_status(state: str):
+                await sink.set_status("thinking")
+
+            # Ambil konfigurasi LLM dari config
+            llm_kwargs = {}
+            if LLM_REASONING_EFFORT:
+                llm_kwargs["extra_body"] = {"reasoning_effort": LLM_REASONING_EFFORT}
+
+            agent_result = await _agent.handle_turn(
+                user_text=user_text,
+                history=history,  # belum ditambah user_text
+                client=client,
+                model=LLM_MODEL,
+                llm_kwargs=llm_kwargs or None,
+                on_status=_agent_status,
+            )
+
+            if agent_result.handled:
+                # Susun pesan fakta untuk persona
+                extra_system_msg = (
+                    "HASIL AKSI (fakta, jangan diubah/dikarang): "
+                    + agent_result.message
+                    + "\nSampaikan ke pengguna dengan gaya karakter."
+                    " Jika ada nama file, sebut PERSIS seperti tertulis."
+                    " Jika ini permintaan konfirmasi, tanyakan konfirmasi dengan jelas "
+                    "dalam terjemahan Indonesia di bagian |||."
+                )
+        except Exception as _e:
+            print(f"[AGENT] Error: {_e}")
+            # Jangan hentikan pipeline jika agent error
+
+    # ---- Susun pesan untuk LLM persona ----
     system_prompt = load_system_prompt()
     history.append({"role": "user", "content": user_text})
-    messages = [{"role": "system", "content": system_prompt}] + history[-MAX_HISTORY_MESSAGES:]
+
+    # Pesan sistem: persona + konteks + (opsional) fakta aksi
+    system_content = system_prompt
+    if extra_system_msg:
+        system_content = system_prompt + "\n\n[KONTEKS AKSI]\n" + extra_system_msg
+
+    messages = [{"role": "system", "content": system_content}] + history[-MAX_HISTORY_MESSAGES:]
 
     line_q: asyncio.Queue = asyncio.Queue()
     audio_q: asyncio.Queue = asyncio.Queue()

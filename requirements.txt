@@ -8,6 +8,7 @@ openai
 python-dotenv
 fastapi
 uvicorn[standard]
+psutil
 
 # PyTorch (dibutuhkan Silero VAD) -> pasang terpisah, contoh untuk CUDA 12.1:
 #   pip install torch --index-url https://download.pytorch.org/whl/cu121
