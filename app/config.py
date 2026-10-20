@@ -12,6 +12,9 @@ CHARACTER_NAME = "Silvia"  # Ganti sesuai nama karakter Anda
 # Direktori aset VRM/VRMA milik pengguna (cari rekursif)
 ASSETS_DIR = BASE_DIR / "assets"
 
+# File animasi idle – diputar terus-menerus sebagai lapisan dasar (bukan pilihan LLM)
+IDLE_FILE = "Idle.vrma"
+
 # Nama file VRM spesifik (kosongkan = ambil .vrm pertama yang ditemukan di ASSETS_DIR)
 VRM_FILE = ""
 
@@ -66,8 +69,8 @@ EMOTION_EXPRESSION = {
 }
 
 # Daftar animasi VRMA: nama -> file dan kapan dipakai
+# CATATAN: idle TIDAK dimasukkan di sini – dikelola terpisah via IDLE_FILE.
 ANIMATIONS = {
-    "idle":        {"file": "Idle.vrma",         "when": "gerakan diam santai"},
     "greetings":   {"file": "greetings.vrma",   "when": "saat menyapa di awal percakapan"},
     "goodbye":     {"file": "Goodbye.vrma",      "when": "saat mengucapkan selamat tinggal"},
     "clapping":    {"file": "Clapping.vrma",     "when": "saat memuji atau senang sekali"},

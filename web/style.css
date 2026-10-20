@@ -297,6 +297,33 @@ html, body {
 
 .dbg-btn:hover { border-color: var(--accent2); background: #1e2538; }
 
+/* Tombol uji beruntun */
+.dbg-btn-special {
+  border-color: rgba(122, 167, 255, 0.35);
+  color: var(--accent);
+}
+.dbg-btn-special:hover { border-color: var(--accent); background: rgba(122, 167, 255, 0.1); }
+
+/* Tombol slow-mo saat aktif */
+.dbg-btn-active {
+  background: rgba(79, 123, 224, 0.25);
+  border-color: var(--accent2);
+  color: var(--accent);
+}
+
+/* HUD bobot animasi & ekspresi */
+.dbg-hud pre {
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 8px;
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  color: var(--muted);
+  white-space: pre;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
 .dbg-slider-wrap {
   display: flex;
   flex-direction: column;

@@ -28,6 +28,7 @@ from app.config import (
     EMOTIONS,
     EMOTION_EXPRESSION,
     VRM_FILE,
+    IDLE_FILE,
     SAMPLE_RATE,
     CHUNK,
     LLM_API_KEY,
@@ -75,8 +76,15 @@ def build_config_data() -> dict:
         else:
             missing_animations.append(name)
 
+    # Cari URL Idle.vrma secara terpisah (tidak masuk ke animations)
+    idle_path = find_animation(IDLE_FILE) if IDLE_FILE else None
+    idle_url = f"/assets/{idle_path.relative_to(ASSETS_DIR).as_posix()}" if idle_path else None
+    if not idle_url:
+        print(f"[CONFIG] Peringatan: IDLE_FILE='{IDLE_FILE}' tidak ditemukan di assets/")
+
     return {
         "vrm_url": vrm_url,
+        "idle_url": idle_url,
         "animations": animations_urls,
         "missing_animations": missing_animations,
         "emotions": EMOTIONS,

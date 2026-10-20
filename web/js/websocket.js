@@ -1,21 +1,28 @@
 /**
  * js/websocket.js - WebSocket Connection & Line Playback Queue
+ *
+ * Perubahan dari versi sebelumnya:
+ *  - Timer returnNeutralTimer SELALU dibatalkan saat baris baru dimulai,
+ *    sehingga emosi baris berikutnya tidak bisa di-override oleh timer lama.
+ *  - returnToIdle() tidak lagi dipanggil di turn_end karena AnimationBlender
+ *    menangani kembali ke idle secara otomatis setelah animasi selesai.
+ *  - Emosi diterapkan TEPAT saat baris mulai diproses (sebelum audio diputar).
  */
 
 import { playAudioBuffer } from './audio.js';
 import { setEmotion } from './expressions.js';
-import { playAnimation, returnToIdle } from './avatar.js';
+import { playAnimation } from './avatar.js';
 import { setStatusUI, setSubtitle, showUserText, showToast, updatePerfStats } from './ui.js';
 
 const WS_URL = `ws://${location.host}/ws`;
-const EXPR_RETURN_DELAY = 0.6; // detik setelah audio selesai baru balik neutral
+const EXPR_RETURN_DELAY_MS = 600; // ms setelah audio selesai baru balik neutral
 
-let ws = null;
-let wsReady = false;
+let ws               = null;
+let wsReady          = false;
 let wsReconnectTimer = null;
 
-const lineQueue = [];
-let isPlayingLine = false;
+const lineQueue    = [];
+let isPlayingLine  = false;
 let returnNeutralTimer = null;
 
 export function connectWS() {
@@ -82,11 +89,14 @@ async function processLineQueue() {
     const item = lineQueue.shift();
 
     if (item.type === 'turn_end') {
+      // Batalkan timer emosi lama sebelum mengatur yang baru
       clearTimeout(returnNeutralTimer);
+
+      // Kembalikan ke neutral setelah delay singkat
       returnNeutralTimer = setTimeout(() => {
         setEmotion('neutral');
-        returnToIdle();
-      }, EXPR_RETURN_DELAY * 1000);
+        // CATATAN: TIDAK memanggil returnToIdle() – AnimationBlender menangani ini otomatis
+      }, EXPR_RETURN_DELAY_MS);
 
       sendWS({ type: 'playback_done' });
       break;
@@ -94,11 +104,15 @@ async function processLineQueue() {
 
     if (item.type !== 'line') continue;
 
-    // 1. Set emosi
-    setEmotion(item.emotion);
+    // Batalkan timer return-neutral dari baris sebelumnya (kritis!)
+    // Tanpa ini, emosi baris berikutnya bisa di-override oleh timer lama.
     clearTimeout(returnNeutralTimer);
+    returnNeutralTimer = null;
 
-    // 2. Picu animasi
+    // 1. Set emosi TEPAT saat baris mulai (sebelum audio)
+    setEmotion(item.emotion);
+
+    // 2. Picu animasi (jika ada)
     if (item.animation) {
       playAnimation(item.animation);
     }
@@ -107,11 +121,11 @@ async function processLineQueue() {
     setSubtitle(item.jp, item.id);
     setStatusUI('speaking');
 
-    // 4. Putar audio
+    // 4. Putar audio dan tunggu selesai
     if (item.audio) {
       const binStr = atob(item.audio);
-      const buf = new ArrayBuffer(binStr.length);
-      const view = new Uint8Array(buf);
+      const buf    = new ArrayBuffer(binStr.length);
+      const view   = new Uint8Array(buf);
       for (let i = 0; i < binStr.length; i++) view[i] = binStr.charCodeAt(i);
       await playAudioBuffer(buf);
     }

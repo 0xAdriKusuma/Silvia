@@ -1,5 +1,9 @@
 /**
- * js/avatar.js - VRM Model Loader & Animation Manager (VRMA + Idle)
+ * js/avatar.js - VRM Model Loader & Animation Manager
+ *
+ * Menggunakan AnimationBlender (animation.js) untuk sistem animasi
+ * berbobot-ternormalisasi: idle selalu aktif, tidak ada T-pose flash,
+ * transisi mulus tanpa stop()/reset()/stopAllAction().
  */
 
 import * as THREE from 'three';
@@ -10,37 +14,51 @@ import {
   VRMLookAtQuaternionProxy,
   createVRMAnimationClip,
 } from '@pixiv/three-vrm-animation';
+import { AnimationBlender } from './animation.js';
 import { discoverExpressions } from './expressions.js';
 import { frameCamera } from './scene.js';
 
-const FADE_DURATION = 0.25;          // crossfade animasi (detik)
-const IDLE_DURATION = 5.0;           // durasi satu siklus idle prosedural (detik)
+// Durasi idle prosedural jika Idle.vrma tidak tersedia
+const PROCEDURAL_IDLE_DURATION = 5.0;
 
 export let vrm = null;
 export let mixer = null;
-export let idleAction = null;
-export let currentAction = null;
-export let animationClips = {};
+/** @type {AnimationBlender|null} */
+export let blender = null;
+export let animationClips = {}; // hanya animasi one-shot (bukan idle)
+
+let idleClip = null;   // clip idle (VRMA atau prosedural)
+let scene3   = null;   // referensi scene three.js
 
 const loader = new GLTFLoader();
 loader.register((p) => new VRMLoaderPlugin(p));
 loader.register((p) => new VRMAnimationLoaderPlugin(p));
 
+// ─── Loader ────────────────────────────────────────────────────────────────
+
 /**
  * Muat model VRM dari URL.
+ * Avatar disembunyikan (visible=false) hingga idle sudah aktif,
+ * sehingga tidak pernah tampil T-pose di frame mana pun.
  */
 export async function loadVRM(url, scene, camera) {
+  scene3 = scene;
   const gltf = await loader.loadAsync(url);
   const nextVrm = gltf.userData.vrm;
   if (!nextVrm) throw new Error('Bukan file VRM yang valid: ' + url);
 
-  VRMUtils.rotateVRM0(nextVrm); // rotasi VRM 0.x -> menghadap +Z
+  VRMUtils.rotateVRM0(nextVrm); // rotasi VRM 0.x agar menghadap +Z
 
+  // Hapus model lama jika ada
   if (vrm) {
     scene.remove(vrm.scene);
     VRMUtils.deepDispose?.(vrm.scene);
   }
-  if (mixer) mixer.stopAllAction();
+  // Hentikan mixer lama (bukan stopAllAction – hanya hentikan animasi)
+  if (mixer) {
+    mixer.stopAllAction(); // aman karena model lama sudah dihapus
+    blender = null;
+  }
 
   vrm = nextVrm;
   vrm.scene.traverse((o) => { o.frustumCulled = false; });
@@ -53,19 +71,26 @@ export async function loadVRM(url, scene, camera) {
     vrm.lookAt.target = camera;
   }
 
+  // Sembunyikan sementara agar tidak tampil T-pose
+  vrm.scene.visible = false;
   scene.add(vrm.scene);
 
   mixer = new THREE.AnimationMixer(vrm.scene);
-  mixer.addEventListener('finished', onAnimationFinished);
+  // Catatan: TIDAK daftarkan listener 'finished' – blender menangani lifecycle sendiri.
 
   discoverExpressions(vrm);
 
-  // Buat idle prosedural awal
-  idleAction = createProceduralIdleAction();
-  if (idleAction) {
-    idleAction.play();
-    currentAction = idleAction;
-  }
+  // Idle prosedural langsung aktif sebagai fallback (akan diganti jika Idle.vrma berhasil)
+  idleClip = createProceduralIdleClip();
+  blender = new AnimationBlender(mixer);
+  if (idleClip) blender.addIdle(idleClip);
+
+  // Panggil mixer.update(0) sekali agar idle langsung diterapkan ke tulang
+  blender.update(0);
+  mixer.update(0);
+
+  // Baru tampilkan avatar – tidak ada T-pose di frame pertama
+  vrm.scene.visible = true;
 
   frameCamera(vrm);
   console.log('[VRM] Model dimuat:', url);
@@ -74,9 +99,35 @@ export async function loadVRM(url, scene, camera) {
 
 /**
  * Muat semua animasi VRMA dari mapping config.
+ * idle_url ditangani terpisah; animasi lain masuk sebagai one-shot.
+ *
+ * @param {Record<string, string>} animationsMap - { namaAnimasi: url }
+ * @param {string|null} idleUrl - URL untuk Idle.vrma (dari /api/config idle_url)
  */
-export async function loadAnimations(animationsMap) {
+export async function loadAnimations(animationsMap, idleUrl) {
   animationClips = {};
+  const allClips = {}; // nama → clip (sementara, untuk normalisasi track)
+
+  // ── Muat Idle.vrma jika tersedia ────────────────────────────────────────
+  let vrmaIdleClip = null;
+  if (idleUrl) {
+    try {
+      const gltf = await loader.loadAsync(idleUrl);
+      const va = gltf.userData.vrmAnimations?.[0];
+      if (!va) throw new Error('Tidak ada VRMAnimation di Idle.vrma');
+      if (!vrm) throw new Error('VRM belum dimuat');
+      const clip = createVRMAnimationClip(va, vrm);
+      clip.name = '__idle__';
+      vrmaIdleClip = clip;
+      console.log('[Idle] Berhasil memuat Idle.vrma');
+    } catch (e) {
+      console.warn('[Idle] Gagal memuat Idle.vrma, pakai idle prosedural:', e.message);
+    }
+  } else {
+    console.warn('[Idle] idle_url tidak tersedia di config – memakai idle prosedural.');
+  }
+
+  // ── Muat animasi one-shot ────────────────────────────────────────────────
   for (const [name, url] of Object.entries(animationsMap)) {
     try {
       const gltf = await loader.loadAsync(url);
@@ -85,97 +136,276 @@ export async function loadAnimations(animationsMap) {
       if (!vrm) throw new Error('VRM belum dimuat');
       const clip = createVRMAnimationClip(va, vrm);
       clip.name = name;
-      animationClips[name] = clip;
+      allClips[name] = clip;
       console.log(`[VRMA] Dimuat: ${name}`);
     } catch (e) {
       console.warn(`[VRMA] Gagal memuat animasi '${name}':`, e.message);
     }
   }
 
-  // Jika Idle.vrma tersedia, gantikan sebagai idle action utama
-  if (animationClips['idle']) {
-    const vrmaIdleClip = animationClips['idle'];
-    const newIdleAction = mixer.clipAction(vrmaIdleClip);
-    newIdleAction.setLoop(THREE.LoopRepeat, Infinity);
-    newIdleAction.clampWhenFinished = false;
-    newIdleAction.enabled = true;
+  // ── Saring track ekspresi dari semua clip ────────────────────────────────
+  // Ekspresi dikontrol sepenuhnya oleh expressions.js, bukan VRMA.
+  const allClipList = vrmaIdleClip ? [vrmaIdleClip, ...Object.values(allClips)] : Object.values(allClips);
 
-    const prev = currentAction;
-    if (prev && prev !== newIdleAction) {
-      prev.crossFadeTo(newIdleAction, FADE_DURATION, true);
-    }
-    newIdleAction.play();
-    idleAction = newIdleAction;
-    currentAction = newIdleAction;
-    console.log('[Idle] Berhasil mengaktifkan animasi looping: Idle.vrma');
+  // Log nama track pertama untuk debugging (hanya sekali)
+  if (allClipList.length > 0) {
+    const sampleTrackNames = allClipList[0].tracks.slice(0, 10).map((t) => t.name);
+    console.log('[Avatar] Contoh nama track (clip pertama):', sampleTrackNames);
   }
-}
 
-/**
- * Mainkan animasi sekali putar dengan crossfade halus tanpa resiko T-pose.
- */
-export function playAnimation(name) {
-  if (!vrm || !mixer) return;
-  const clip = animationClips[name];
-  if (!clip) {
-    console.warn(`[VRMA] Animasi '${name}' tidak ada di model ini, dilewati.`);
+  for (const clip of allClipList) {
+    const before = clip.tracks.length;
+    clip.tracks = clip.tracks.filter((t) => !isExpressionTrack(t.name, vrm));
+    const after = clip.tracks.length;
+    if (before !== after) {
+      console.log(`[Avatar] Clip '${clip.name}': disaring ${before - after} track ekspresi`);
+    }
+  }
+
+  // ── Normalisasi himpunan track tulang antar semua clip ───────────────────
+  // Agar jumlah bobot per tulang selalu = 1 (mencegah T-pose per-tulang).
+  if (vrmaIdleClip && allClipList.length > 1) {
+    normalizeTrackSets([vrmaIdleClip, ...Object.values(allClips)], vrmaIdleClip);
+  }
+
+  // ── Bangun blender baru dengan idle yang benar ───────────────────────────
+  const finalIdleClip = vrmaIdleClip ?? idleClip;
+  if (!finalIdleClip) {
+    console.warn('[Avatar] Tidak ada clip idle sama sekali!');
     return;
   }
 
-  const prev = currentAction;
-  const next = mixer.clipAction(clip);
-  next.setLoop(THREE.LoopOnce, 1);
-  next.clampWhenFinished = true;
-  next.enabled = true;
-  next.reset();
+  // Buat ulang blender dan mixer agar bersih
+  mixer.stopAllAction();
+  blender = new AnimationBlender(mixer);
+  blender.addIdle(finalIdleClip);
+  idleClip = finalIdleClip;
 
-  // Pastikan idleAction tetap aktif sebagai base layer
-  if (idleAction) {
-    idleAction.enabled = true;
-    idleAction.setEffectiveWeight(1.0);
-    idleAction.play();
+  // Tambahkan semua one-shot
+  for (const [name, clip] of Object.entries(allClips)) {
+    blender.addOneShot(name, clip);
+    animationClips[name] = clip;
   }
 
-  next.fadeIn(FADE_DURATION).play();
-  if (prev && prev !== next && prev !== idleAction) {
-    prev.fadeOut(FADE_DURATION);
-  }
+  // Update awal agar idle langsung aktif sebelum frame pertama
+  blender.update(0);
+  mixer.update(0);
 
-  currentAction = next;
+  console.log('[Avatar] Blender siap dengan', Object.keys(animationClips).length, 'animasi one-shot');
+}
+
+// ─── Kontrol animasi ────────────────────────────────────────────────────────
+
+/**
+ * Picu animasi sekali-putar dengan nama.
+ * Jika animasi tidak ditemukan, tampilkan peringatan dan abaikan.
+ * @param {string} name
+ */
+export function playAnimation(name) {
+  if (!blender) {
+    console.warn('[Avatar] Blender belum siap, animasi diabaikan:', name);
+    return;
+  }
+  blender.trigger(name);
 }
 
 /**
- * Kembali ke idle dengan transisi halus.
+ * Kembalikan ke idle secara eksplisit (mis. dipanggil dari WebSocket turn_end).
+ * Karena blender otomatis kembali ke idle setelah animasi selesai,
+ * fungsi ini hanya diperlukan jika ada kebutuhan khusus.
  */
 export function returnToIdle() {
-  if (!idleAction) return;
-  const prev = currentAction;
-  if (prev === idleAction) return;
-
-  if (prev) {
-    prev.fadeOut(FADE_DURATION);
-  }
-
-  idleAction.enabled = true;
-  idleAction.setEffectiveWeight(1.0);
-  idleAction.play();
-
-  currentAction = idleAction;
+  if (!blender) return;
+  blender.returnToIdle();
 }
 
-function onAnimationFinished(e) {
-  if (e.action === currentAction && e.action !== idleAction) {
-    returnToIdle();
-  }
+// ─── Update loop ─────────────────────────────────────────────────────────────
+
+/**
+ * Tahap 1: Jalankan update animasi (Blender & Mixer) sebelum ekspresi diatur.
+ * @param {number} dt
+ */
+export function updateAvatarAnimation(dt) {
+  const clampedDt = Math.min(dt, 0.1);
+  if (blender) blender.update(clampedDt);
+  if (mixer)   mixer.update(clampedDt);
 }
 
 /**
- * Buat AnimationClip idle prosedural jika tidak ada file Idle.vrma.
+ * Tahap 2: Jalankan update VRM (evaluasi lookAt, humanoid, expressionManager, springBone).
+ * Dipanggil SETELAH updateExpressions() agar perubahan ekspresi langsung diterapkan di frame yang sama tanpa delay 1 frame.
+ * @param {number} dt
  */
-function createProceduralIdleAction() {
+export function updateAvatarVRM(dt) {
+  const clampedDt = Math.min(dt, 0.1);
+  if (vrm) vrm.update(clampedDt);
+}
+
+/**
+ * Kompatibilitas mundur: jalankan seluruh siklus update sekaligus.
+ * @param {number} dt
+ */
+export function updateAvatar(dt) {
+  updateAvatarAnimation(dt);
+  updateAvatarVRM(dt);
+}
+
+// ─── Kelengkapan track (normalisasi himpunan tulang) ──────────────────────────
+
+/**
+ * Normalisasi himpunan track tulang di semua clip agar setiap clip
+ * menyentuh tulang yang sama. Clip yang tidak punya track untuk tulang X
+ * mendapat track konstan (identitas atau nilai dari clip referensi).
+ *
+ * @param {THREE.AnimationClip[]} clips - semua clip yang akan dinormalisasi
+ * @param {THREE.AnimationClip} referenceClip - clip yang jadi referensi nilai default (idle)
+ */
+function normalizeTrackSets(clips, referenceClip) {
+  if (!clips.length) return;
+
+  // Kumpulkan semua nama track unik dari gabungan seluruh clip
+  const allTrackNames = new Set();
+  for (const clip of clips) {
+    for (const track of clip.tracks) {
+      allTrackNames.add(track.name);
+    }
+  }
+
+  // Bangun peta nama track → track dari referensi (idle)
+  const referenceTrackMap = new Map();
+  for (const track of referenceClip.tracks) {
+    referenceTrackMap.set(track.name, track);
+  }
+
+  // Untuk setiap clip, tambahkan track konstan untuk tulang yang hilang
+  for (const clip of clips) {
+    const existingTrackNames = new Set(clip.tracks.map((t) => t.name));
+
+    for (const trackName of allTrackNames) {
+      if (existingTrackNames.has(trackName)) continue;
+
+      // Cari nilai dari clip referensi atau clip lain yang punya track ini
+      let sourceTrack = referenceTrackMap.get(trackName);
+      if (!sourceTrack) {
+        for (const otherClip of clips) {
+          sourceTrack = otherClip.tracks.find((t) => t.name === trackName);
+          if (sourceTrack) break;
+        }
+      }
+
+      // Buat track konstan (2 keyframe: t=0 dan t=duration)
+      let constantTrack;
+      if (sourceTrack instanceof THREE.QuaternionKeyframeTrack) {
+        // Ambil nilai frame pertama sebagai nilai konstan
+        const firstVal = sourceTrack.values.slice(0, 4); // [x,y,z,w]
+        constantTrack = new THREE.QuaternionKeyframeTrack(
+          trackName,
+          [0, clip.duration],
+          [...firstVal, ...firstVal],
+          THREE.InterpolateLinear,
+        );
+      } else if (sourceTrack instanceof THREE.VectorKeyframeTrack) {
+        const firstVal = sourceTrack.values.slice(0, 3);
+        constantTrack = new THREE.VectorKeyframeTrack(
+          trackName,
+          [0, clip.duration],
+          [...firstVal, ...firstVal],
+          THREE.InterpolateLinear,
+        );
+      } else if (sourceTrack) {
+        // Generic: salin nilai pertama
+        const valSize = sourceTrack.values.length / sourceTrack.times.length;
+        const firstVal = sourceTrack.values.slice(0, valSize);
+        // Gunakan tipe track yang sama
+        constantTrack = new sourceTrack.constructor(
+          trackName,
+          [0, clip.duration],
+          [...firstVal, ...firstVal],
+          THREE.InterpolateLinear,
+        );
+      } else {
+        // Tidak ada referensi → quaternion identitas
+        if (trackName.endsWith('.quaternion')) {
+          constantTrack = new THREE.QuaternionKeyframeTrack(
+            trackName,
+            [0, clip.duration],
+            [0, 0, 0, 1, 0, 0, 0, 1],
+            THREE.InterpolateLinear,
+          );
+        } else if (trackName.endsWith('.position')) {
+          constantTrack = new THREE.VectorKeyframeTrack(
+            trackName,
+            [0, clip.duration],
+            [0, 0, 0, 0, 0, 0],
+            THREE.InterpolateLinear,
+          );
+        }
+        // Lewati track tipe tidak dikenal
+      }
+
+      if (constantTrack) {
+        clip.tracks.push(constantTrack);
+      }
+    }
+  }
+
+  console.log(
+    `[Avatar] Normalisasi track: ${allTrackNames.size} track unik di ${clips.length} clip.`,
+  );
+}
+
+// ─── Filter track ekspresi ───────────────────────────────────────────────────
+
+/**
+ * Cek apakah nama track merupakan track ekspresi VRM.
+ * three-vrm-animation menghasilkan track dengan format nama seperti:
+ *  - "VRMExpression.happy.weight"
+ *  - Atau path node internal yang mengandung nama ekspresi
+ * Karena format exakt bergantung versi library, gunakan substring matching.
+ *
+ * @param {string} trackName
+ * @param {import('@pixiv/three-vrm').VRM} vrm
+ * @returns {boolean}
+ */
+function isExpressionTrack(trackName, vrm) {
+  const em = vrm?.expressionManager;
+  if (!em) return false;
+
+  const lower = trackName.toLowerCase();
+
+  // Format umum dari three-vrm-animation:
+  // "VRMExpression" atau "expressionManager" dalam nama track
+  if (lower.includes('vrmexpression') || lower.includes('expressionmanager')) {
+    return true;
+  }
+
+  // Cek apakah nama track mengandung nama ekspresi yang dikenal
+  const exprNames = em.expressions?.map((e) => e.expressionName.toLowerCase()) ?? [];
+  for (const exprName of exprNames) {
+    // Track harus mengandung nama ekspresi sebagai kata utuh (bukan substring kebetulan)
+    // Format: ".{exprName}." atau "/{exprName}/" atau mengandung nama ekspresi
+    if (lower.includes(exprName)) {
+      // Tambahan validasi: track body biasanya mengandung .quaternion atau .position
+      // track ekspresi tidak mengandung ini
+      const isBodyTrack = lower.endsWith('.quaternion') || lower.endsWith('.position') ||
+                          lower.endsWith('.scale');
+      if (!isBodyTrack) return true;
+    }
+  }
+
+  return false;
+}
+
+// ─── Idle prosedural ──────────────────────────────────────────────────────────
+
+/**
+ * Buat AnimationClip idle prosedural (cadangan jika Idle.vrma tidak ada).
+ * @returns {THREE.AnimationClip|null}
+ */
+function createProceduralIdleClip() {
   if (!vrm || !mixer) return null;
   const humanoid = vrm.humanoid;
-  const T = IDLE_DURATION;
+  const T = PROCEDURAL_IDLE_DURATION;
 
   function boneTrack(boneName, keyTimes, keyValues) {
     const node = humanoid.getNormalizedBoneNode(boneName);
@@ -189,15 +419,15 @@ function createProceduralIdleAction() {
   }
 
   const tracks = [];
-  const larmQ = new THREE.Quaternion().setFromEuler(new THREE.Euler(0.08, 0.05, -1.15));
-  const rarmQ = new THREE.Quaternion().setFromEuler(new THREE.Euler(0.08, -0.05, 1.15));
+  const larmQ  = new THREE.Quaternion().setFromEuler(new THREE.Euler(0.08,  0.05, -1.15));
+  const rarmQ  = new THREE.Quaternion().setFromEuler(new THREE.Euler(0.08, -0.05,  1.15));
   const lforeQ = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, -0.25));
   const rforeQ = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0,  0.25));
   const staticArr = (q) => [q.x, q.y, q.z, q.w, q.x, q.y, q.z, q.w];
 
-  const larm = boneTrack('leftUpperArm', [0, T], staticArr(larmQ));
-  const rarm = boneTrack('rightUpperArm', [0, T], staticArr(rarmQ));
-  const lfore = boneTrack('leftLowerArm', [0, T], staticArr(lforeQ));
+  const larm  = boneTrack('leftUpperArm',  [0, T], staticArr(larmQ));
+  const rarm  = boneTrack('rightUpperArm', [0, T], staticArr(rarmQ));
+  const lfore = boneTrack('leftLowerArm',  [0, T], staticArr(lforeQ));
   const rfore = boneTrack('rightLowerArm', [0, T], staticArr(rforeQ));
 
   if (larm)  tracks.push(larm);
@@ -205,11 +435,11 @@ function createProceduralIdleAction() {
   if (lfore) tracks.push(lfore);
   if (rfore) tracks.push(rfore);
 
-  // Napas lembut (spine & head)
+  // Animasi napas lembut (spine & head)
   const N_BREATH = 8;
   const breathTimes = [];
   const spineVals = [];
-  const headVals = [];
+  const headVals  = [];
 
   for (let i = 0; i <= N_BREATH; i++) {
     const t = (i / N_BREATH) * T;
@@ -220,7 +450,13 @@ function createProceduralIdleAction() {
     const sQ = new THREE.Quaternion().setFromEuler(new THREE.Euler(sinP * 0.015, 0, 0));
     spineVals.push(sQ.x, sQ.y, sQ.z, sQ.w);
 
-    const hQ = new THREE.Quaternion().setFromEuler(new THREE.Euler(-sinP * 0.01 + Math.sin(phase * 0.5) * 0.012, Math.cos(phase * 0.5) * 0.018, 0));
+    const hQ = new THREE.Quaternion().setFromEuler(
+      new THREE.Euler(
+        -sinP * 0.01 + Math.sin(phase * 0.5) * 0.012,
+        Math.cos(phase * 0.5) * 0.018,
+        0,
+      ),
+    );
     headVals.push(hQ.x, hQ.y, hQ.z, hQ.w);
   }
 
@@ -231,14 +467,5 @@ function createProceduralIdleAction() {
 
   if (!tracks.length) return null;
 
-  const clip = new THREE.AnimationClip('idle', T, tracks);
-  const action = mixer.clipAction(clip);
-  action.setLoop(THREE.LoopRepeat, Infinity);
-  action.clampWhenFinished = false;
-  return action;
-}
-
-export function updateAvatar(dt) {
-  if (mixer) mixer.update(dt);
-  if (vrm) vrm.update(dt);
+  return new THREE.AnimationClip('__procedural_idle__', T, tracks);
 }
