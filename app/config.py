@@ -66,8 +66,8 @@ EMOTION_EXPRESSION = {
 }
 
 # Daftar animasi VRMA: nama -> file dan kapan dipakai
-# Format tag di LLM: [emosi|nama_animasi] atau [emosi]
 ANIMATIONS = {
+    "idle":        {"file": "Idle.vrma",         "when": "gerakan diam santai"},
     "greetings":   {"file": "greetings.vrma",   "when": "saat menyapa di awal percakapan"},
     "goodbye":     {"file": "Goodbye.vrma",      "when": "saat mengucapkan selamat tinggal"},
     "clapping":    {"file": "Clapping.vrma",     "when": "saat memuji atau senang sekali"},
