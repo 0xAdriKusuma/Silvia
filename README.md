@@ -29,7 +29,12 @@ Mic -> Silero VAD -> faster-whisper (STT) -> [Agent Tool Calling]* -> LLM Stream
   - **Pencegahan Prompt Injection**: Konten file dan data alat diperlakukan murni sebagai data, bukan instruksi yang bisa dieksekusi oleh model persona.
   - **Audit Logging**: Setiap aksi, argumen, status eksekusi, dan keputusan konfirmasi dicatat dalam format JSON Lines di `agent/logs/audit.jsonl`.
 - **Respons streaming per kalimat**: Balasan LLM langsung dikirim ke TTS kalimat demi kalimat agar jeda menjawab singkat.
-- **Avatar 3D (VRM)** di browser dengan ekspresi wajah, animasi badan (VRMA), sinkronisasi gerak mulut (*lip-sync*), dan subtitle.
+- **Avatar 3D (VRM) Bebas T-Pose & Animasi Mulus**:
+  - **Loop Idle Tanpa Henti**: `Idle.vrma` berjalan terus-menerus sebagai lapisan dasar sejak model dimuat; avatar tidak pernah berdiri kaku seperti patung.
+  - **Sistem `AnimationBlender` Ternormalisasi**: Jumlah seluruh bobot animasi selalu dijaga $\sum w_i = 1.0$, menjamin transisi antar gerakan (*crossfade*) halus tanpa glitch, patah, atau T-pose kilat.
+  - **Normalisasi Track Tulang**: Menyelaraskan seluruh himpunan tulang antar clip VRMA sehingga tidak terjadi *bone snap* ke bind-pose saat berganti animasi.
+  - **Ekspresi Wajah & Emosi Mandiri**: Morph targets emosi di-lerp dinamis dan dibersihkan otomatis antar kalimat tanpa menempel, terisolasi sempurna dari kedipan otomatis (*auto-blink*) dan gerak mulut suara (*lip-sync* `aa`).
+  - **Panel Uji & Debug Lengkap**: Tekan shortcut `D` untuk membuka panel kontrol emosi/animasi, tombol *Uji Beruntun*, mode *Slow-mo 0.1×*, serta HUD pemantau bobot animasi & ekspresi real-time.
 - **Dua mode penggunaan**: Web (avatar 3D interaktif) dan Konsol (suara terminal).
 - **Fallback otomatis**: Jika GPU tidak tersedia, STT Whisper otomatis berjalan di CPU (int8).
 
@@ -78,7 +83,19 @@ silvia/
 ├── assets/              # Model avatar 3D (.vrm), animasi (.vrma), dan background
 ├── prompts/
 │   └── persona.txt      # Prompt karakter & kepribadian Silvia
-└── web/                 # Antarmuka web (three.js, three-vrm, HTML/CSS/JS)
+├── web/                 # Antarmuka visual 3D (three.js, three-vrm, HTML/CSS/JS)
+│   ├── index.html       # Tampilan web utama, HUD status, dan panel uji debug
+│   ├── main.js          # App entry point & render loop tersinkronisasi presisi
+│   ├── style.css        # Desain antarmuka, status pill, monitor performa, & debug panel
+│   ├── README.md        # Dokumentasi arsitektur frontend web
+│   └── js/
+│       ├── animation.js # AnimationBlender (normalisasi bobot & crossfade mulus)
+│       ├── avatar.js    # Loader VRM & VRMA, normalisasi track tulang, filter ekspresi
+│       ├── expressions.js # Manajemen emosi, auto-blink, & morph target
+│       ├── audio.js     # Web Audio API, AnalyserNode, & lip-sync RMS
+│       ├── scene.js     # Three.js Scene, Camera, OrbitControls, Lighting
+│       ├── ui.js        # Subtitle dua baris, HUD performa, & interaksi debug panel
+│       └── websocket.js # Koneksi WebSocket & antrean audio playback
 ```
 
 ---
@@ -245,11 +262,23 @@ Contoh:
 ```
 
 - **Emosi** mengatur ekspresi wajah dan nada suara (kecepatan dan tinggi nada TTS).
-- **Animasi** adalah gerakan badan dari file `.vrma`. Nilai `none` berarti tidak ada gerakan khusus.
+- **Animasi** adalah gerakan badan dari file `.vrma`. Nilai `none` berarti tidak ada gerakan khusus (hanya idle).
 - Bagian Jepang dibacakan TTS, bagian Indonesia hanya tampil sebagai subtitle.
 - Tag yang salah atau tidak dikenal diperlakukan aman: emosi menjadi `neutral`, animasi diabaikan.
 
-Daftar emosi dan animasi ada di `app/config.py` (`EMOTION_PROSODY` dan `ANIMATIONS`) dan otomatis dimasukkan ke prompt. Untuk menambah animasi baru: letakkan file `.vrma` di `assets/`, lalu tambahkan satu entri di `ANIMATIONS`.
+### Sistem Lapisan Animasi (Base Idle vs One-Shot)
+1. **Lapisan Dasar (Idle)**: File `Idle.vrma` dimuat dan diloop tanpa henti dengan bobot awal 1.0. Jika file tidak ditemukan, fallback ke idle prosedural pernapasan otomatis aktif.
+2. **Animasi Sekali-Putar (One-Shot)**: Saat kalimat memiliki tag animasi (misalnya `[happy|clapping]`), `AnimationBlender` menaikkan bobot animasi clapping ke 1.0 secara mulus (*fade-in* 0.3 detik) sambil menurunkan bobot idle. Sebelum animasi selesai (*blend-out* 0.5 detik), bobot idle otomatis dinaikkan kembali ke 1.0 secara mulus tanpa pernah terjadi T-pose.
+3. **Pembersihan Ekspresi**: Setiap kalimat baru dimulai, ekspresi kalimat sebelumnya langsung di-lerp turun dengan cepat (`EXPR_FALL_SPEED = 14.0/s`) menuju nilai emosi baru. Mulut (*lip-sync*) dan mata (*auto-blink*) beroperasi pada jalur terpisah sehingga tidak saling mengunci.
+
+### Panel Uji Debug Frontend
+Saat menjalankan mode Web, tekan tombol **`D`** pada keyboard atau klik ikon **`D`** di pojok kanan bawah untuk membuka panel kontrol interaktif:
+- Menguji seluruh animasi one-shot dan emosi secara manual.
+- **🔁 Uji Beruntun**: Menguji transisi cepat dan pergantian emosi berturut-turut untuk memastikan animasi tidak patah.
+- **🐢 Slow-mo 0.1×**: Memperlambat pergerakan animasi menjadi 10% untuk memeriksa kehalusan interpolasi tulang dan memastikan ketiadaan T-pose flash.
+- **HUD Bobot Real-Time**: Melihat persentase bobot setiap action animasi ($\sum = 100\%$) dan bobot morph target ekspresi secara langsung.
+
+Daftar emosi dan animasi ada di `app/config.py` (`EMOTION_PROSODY`, `EMOTION_EXPRESSION`, `IDLE_FILE`, dan `ANIMATIONS`). Untuk menambah animasi baru: letakkan file `.vrma` di `assets/`, lalu tambahkan satu entri di `ANIMATIONS`.
 
 ---
 
@@ -265,7 +294,9 @@ Daftar emosi dan animasi ada di `app/config.py` (`EMOTION_PROSODY` dan `ANIMATIO
 | Waktu kadaluarsa konfirmasi hapus | `CONFIRM_EXPIRY_SECONDS` di `agent/config.py` |
 | Batas karakter pembacaan file | `TOOL_RESULT_MAX_CHARS` di `agent/config.py` |
 | Nama karakter | `CHARACTER_NAME` di `app/config.py` |
+| File animasi idle utama | `IDLE_FILE` di `app/config.py` (`Idle.vrma`) |
 | Kecepatan dan nada suara per emosi | `EMOTION_PROSODY` di `app/config.py` |
+| Pemetaan emosi ke blendshape VRM | `EMOTION_EXPRESSION` di `app/config.py` |
 | Daftar animasi dan kapan dipakai | `ANIMATIONS` di `app/config.py` |
 | Bahasa bicara pengguna (STT) | `STT_LANG` di `app/config.py` (`"id"` atau `"ja"`) |
 | Ukuran model Whisper | `WHISPER_MODEL` di `app/config.py` |
