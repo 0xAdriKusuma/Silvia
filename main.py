@@ -34,7 +34,7 @@ def run_console():
     from app.llm import get_llm_client
     from app.pipeline import respond
     from app.sinks import ConsoleSink
-    from app.tts import init_player, quit_player
+    from app.tts import init_player, quit_player, init_tts
 
     if not LLM_API_KEY:
         raise SystemExit("LLM_API_KEY belum diisi. Salin env.example menjadi .env lalu isi kuncinya.")
@@ -46,6 +46,9 @@ def run_console():
     client = get_llm_client()
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
+
+    print("[TTS] Menginisialisasi sistem TTS...")
+    init_tts()
 
     mic = Mic()
     history: list = []

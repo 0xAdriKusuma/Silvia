@@ -13,7 +13,7 @@ from app.config import (
     MAX_HISTORY_MESSAGES,
 )
 from app.llm import load_system_prompt
-from app.tts import parse_line, synth
+from app.tts import parse_line, synth, synth_clip, AudioClip
 from app.sinks import BaseSink, ConsoleSink
 
 # Import agent (opsional — dinonaktifkan jika modul tidak tersedia)
@@ -135,7 +135,7 @@ async def respond(
             await line_q.put(None)
 
     async def tts_worker():
-        """Ambil baris dari line_q, sintesis audio, kirim ke audio_q."""
+        """Ambil baris dari line_q, sintesis audio (AudioClip), kirim ke audio_q."""
         try:
             while True:
                 line = await line_q.get()
@@ -144,8 +144,8 @@ async def respond(
                 emotion, animation, jp, idn = parse_line(line)
                 if not jp:
                     continue
-                audio = await synth(jp, emotion)
-                await audio_q.put((emotion, animation, jp, idn, audio))
+                clip = await synth_clip(jp, emotion)
+                await audio_q.put((emotion, animation, jp, idn, clip))
         finally:
             await audio_q.put(None)
 
@@ -156,7 +156,7 @@ async def respond(
             item = await audio_q.get()
             if item is None:
                 break
-            emotion, animation, jp, idn, audio = item
+            emotion, animation, jp, idn, clip = item
             if first:
                 print(f"[TOTAL] suara pertama keluar setelah {time.perf_counter() - t0:.2f} dtk")
                 first = False
@@ -164,7 +164,7 @@ async def respond(
             if on_line:
                 on_line(emotion, animation, jp, idn)
             # Kirim ke sink (console: cetak+putar; web: broadcast JSON)
-            await sink.emit_line(emotion, animation, jp, idn, audio)
+            await sink.emit_line(emotion, animation, jp, idn, clip)
 
     await sink.set_status("thinking")
     await asyncio.gather(llm_producer(), tts_worker(), player())

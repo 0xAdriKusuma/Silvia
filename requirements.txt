@@ -1,7 +1,7 @@
 faster-whisper
 silero-vad
 sounddevice
-numpy
+numpy<2
 pygame
 edge-tts
 openai
@@ -9,6 +9,8 @@ python-dotenv
 fastapi
 uvicorn[standard]
 psutil
+style-bert-vits2
+huggingface_hub
 
 # PyTorch (dibutuhkan Silero VAD) -> pasang terpisah, contoh untuk CUDA 12.1:
 #   pip install torch --index-url https://download.pytorch.org/whl/cu121

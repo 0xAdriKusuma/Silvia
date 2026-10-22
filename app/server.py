@@ -393,7 +393,13 @@ def run_web():
                 await manager.broadcast(stats)
             await asyncio.sleep(1.0)
 
+    from app.tts import init_tts
+
     async def serve():
+        print("[TTS] Menginisialisasi sistem TTS (unduhan model pertama kali bisa memakan waktu)...")
+        await asyncio.to_thread(init_tts)
+        print("[TTS] Siap!")
+
         voice_thread.start()
         stats_bg_task = asyncio.create_task(system_stats_task())
         print("\n[WEB] Server berjalan di http://127.0.0.1:8000")

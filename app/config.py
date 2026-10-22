@@ -56,6 +56,36 @@ EMOTION_PROSODY = {
 # Daftar emosi yang valid (disinkronkan dengan kunci EMOTION_PROSODY)
 EMOTIONS = list(EMOTION_PROSODY.keys())
 
+# Konfigurasi backend TTS: "edge", "sbv2", atau "auto" (default "auto")
+TTS_BACKEND = os.getenv("TTS_BACKEND", "auto").lower()
+SBV2_DEVICE = os.getenv("SBV2_DEVICE", "auto").lower()
+SBV2_TIMEOUT_S = float(os.getenv("SBV2_TIMEOUT_S", "4.0"))
+SBV2_MODEL_DIR = BASE_DIR / "models" / "sbv2"
+SBV2_REPO = os.getenv("SBV2_REPO", "litagin/style_bert_vits2_jvnv")
+SBV2_MODEL_NAME = os.getenv("SBV2_MODEL_NAME", "jvnv-F2-jp")
+SBV2_FILES = (
+    f"{SBV2_MODEL_NAME}/config.json",
+    f"{SBV2_MODEL_NAME}/jvnv-F2_e166_s20000.safetensors",
+    f"{SBV2_MODEL_NAME}/style_vectors.npy",
+)
+SBV2_BERT = os.getenv("SBV2_BERT", "ku-nlp/deberta-v2-large-japanese-char-wwm")
+
+# Pemetaan emosi ke parameter gaya SBV2
+EMOTION_STYLE = {   # nilai awal; pengguna akan menalanya dengan telinga
+    "happy": {"style": "Happy", "style_weight": 2.0, "length": 0.95},
+    "neutral": {"style": "Neutral", "style_weight": 1.0, "length": 1.0},
+    "shy": {"style": "Neutral", "style_weight": 1.0, "length": 1.10},
+    "sad": {"style": "Sad", "style_weight": 2.0, "length": 1.10},
+    "angry": {"style": "Angry", "style_weight": 2.0, "length": 0.95},
+    "surprised": {"style": "Surprise", "style_weight": 2.0, "length": 0.90},
+    "sleepy": {"style": "Sad", "style_weight": 0.7, "length": 1.25},
+}
+
+# Validasi saat start: kunci EMOTION_STYLE harus persis sama dengan EMOTIONS
+if set(EMOTION_STYLE.keys()) != set(EMOTIONS):
+    raise ValueError(f"EMOTION_STYLE keys do not match EMOTIONS: {set(EMOTION_STYLE.keys())} != {set(EMOTIONS)}")
+
+
 # Pemetaan emosi -> bobot blendshape (sumber tunggal, dikirim ke browser via /api/config)
 # Key = nama ekspresi VRM (expressionManager), value = bobot 0.0-1.0
 EMOTION_EXPRESSION = {

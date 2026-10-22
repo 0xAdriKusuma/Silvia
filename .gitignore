@@ -55,6 +55,8 @@ agent/workspace/*
 *.mp3
 *.ogg
 *.flac
+models/
+tts_samples/
 
 # ==========================================
 # Editor & IDE

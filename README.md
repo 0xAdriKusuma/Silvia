@@ -5,9 +5,9 @@
 Alur kerja intinya:
 
 ```text
-Mic -> Silero VAD -> faster-whisper (STT) -> [Agent Tool Calling]* -> LLM Streaming -> Edge-TTS -> Web Audio API / Speaker
-                                                   |                                       |
-                                         (aksi sistem & file)               tag emosi + animasi -> avatar VRM 3D
+Mic -> Silero VAD -> faster-whisper (STT) -> [Agent Tool Calling]* -> LLM Streaming -> TTS (SBV2 / Edge fallback) -> Web Audio API / Speaker
+                                                   |                                           |
+                                         (aksi sistem & file)                   tag emosi + animasi -> avatar VRM 3D
 ```
 *\*Agent hanya aktif jika ucapan mengandung kata kunci aksi (mode keyword) atau dikonfigurasi selalu aktif.*
 
@@ -18,6 +18,10 @@ Mic -> Silero VAD -> faster-whisper (STT) -> [Agent Tool Calling]* -> LLM Stream
 ## Fitur Saat Ini
 
 - **Percakapan suara dua arah**: Anda berbicara dalam bahasa Indonesia, Silvia membalas dengan suara bahasa Jepang beserta terjemahan Indonesia sebagai subtitle.
+- **Sintesis Suara Berkualitas Tinggi (Style-Bert-VITS2 & Cadangan Edge-TTS)**:
+  - **SBV2 Lokal (Model `jvnv-F2-jp`)**: Suara lokal ekspresif yang diselaraskan dengan emosi (`Happy`, `Sad`, `Angry`, `Surprise`, dll.) menggunakan model Style-Bert-VITS2 dan DeBERTa-v2.
+  - **Fallback Otomatis (`auto`) & Circuit Breaker**: Jika model lokal belum tersedia, mengalami timeout, atau sibuk, sistem otomatis jatuh ke Edge-TTS tanpa memutus percakapan. Jika terjadi 3 kali kegagalan berturut-turut, pemutus sirkuit beralih ke Edge-TTS selama 60 detik sebelum mencoba kembali.
+  - **Streaming Per Kalimat & Normalisasi Teks**: Normalisasi karakter/emoji otomatis, pemecahan teks panjang (>150 karakter) dengan jeda hening alami ~0.15 dtk, dan pengiriman klip audio WAV/MP3 tanpa memblokir event loop.
 - **Kemampuan Agent (Tool Calling)**:
   - **Membuka aplikasi**: Membuka program dari allowlist aman (Notepad, Calculator, Paint, File Explorer, Task Manager, VS Code, Browser, Spotify, Discord, dll.).
   - **Membuka URL**: Membuka link web terverifikasi (`http://` dan `https://`) di browser default.
@@ -77,9 +81,11 @@ silvia/
 │   ├── mic.py           # Perekaman mic + deteksi suara (Silero VAD)
 │   ├── pipeline.py      # Pipeline paralel: LLM -> TTS -> Audio Sink + Integrasi Agent
 │   ├── server.py        # Server FastAPI + WebSocket untuk mode Web
-│   ├── sinks.py         # Abstraksi audio output (ConsoleSink & WebSink)
+│   ├── sinks.py         # Abstraksi audio output (ConsoleSink & WebSink dengan AudioClip)
 │   ├── stt.py           # Transkripsi suara via faster-whisper
-│   └── tts.py           # Sintesis suara via Edge-TTS & pemutar audio
+│   ├── tts.py           # Sintesis suara: orkestrator AudioClip, fallback Edge-TTS & normalisasi
+│   └── tts_sbv2.py      # Engine inferensi Style-Bert-VITS2 (SBV2) lokal & auto-download
+├── models/              # Direktori cache model lokal (SBV2 jvnv-F2-jp)
 ├── assets/              # Model avatar 3D (.vrm), animasi (.vrma), dan background
 ├── prompts/
 │   └── persona.txt      # Prompt karakter & kepribadian Silvia
@@ -169,10 +175,16 @@ LLM_REASONING_EFFORT=low
 # --- Konfigurasi Modul Agent (Tool Calling) ---
 AGENT_ENABLED=1             # 1 = aktif (default), 0 = nonaktif
 AGENT_TRIGGER_MODE=keyword  # "keyword" (hemat biaya/token) atau "always" (selalu cek tool)
+
+# --- Konfigurasi TTS (Text-to-Speech) ---
+TTS_BACKEND=auto            # "auto" (prioritas SBV2 lokal, cadangan Edge), "sbv2", atau "edge"
+SBV2_DEVICE=auto            # "auto", "cuda", atau "cpu"
+SBV2_TIMEOUT_S=4.0          # Batas waktu sintesis per kalimat (detik) sebelum fallback
 ```
 
 > [!NOTE]
 > Nama model di penyedia API sering berganti atau dihentikan. Jika muncul error `model_not_found` (404), cek daftar model terbaru di dashboard penyedia lalu ubah `LLM_MODEL`. `LLM_REASONING_EFFORT=low` hanya untuk model *reasoning* seperti GPT-OSS; kosongkan untuk model lain.
+> Pada eksekusi pertama dengan `TTS_BACKEND=auto` atau `sbv2`, sistem akan mengunduh model SBV2 (`jvnv-F2-jp`, ~251 MB) dan DeBERTa-v2 secara otomatis ke folder lokal/cache.
 
 > [!IMPORTANT]
 > Jangan unggah `.env` ke publik/GitHub karena berisi API Key rahasia Anda. File ini sudah ditambahkan ke [.gitignore](.gitignore).
@@ -301,7 +313,11 @@ Daftar emosi dan animasi ada di `app/config.py` (`EMOTION_PROSODY`, `EMOTION_EXP
 | Bahasa bicara pengguna (STT) | `STT_LANG` di `app/config.py` (`"id"` atau `"ja"`) |
 | Ukuran model Whisper | `WHISPER_MODEL` di `app/config.py` |
 | Kepekaan deteksi suara | `VAD_THRESHOLD`, `END_SILENCE_MS` di `app/config.py` |
-| Suara TTS | `TTS_VOICE` di `app/config.py` |
+| Backend TTS (Audio Engine) | `TTS_BACKEND` di `app/config.py` / `.env` (`"auto"`, `"sbv2"`, `"edge"`) |
+| Perangkat inferensi SBV2 | `SBV2_DEVICE` di `app/config.py` / `.env` (`"auto"`, `"cuda"`, `"cpu"`) |
+| Batas waktu inferensi SBV2 | `SBV2_TIMEOUT_S` di `app/config.py` / `.env` |
+| Pemetaan emosi ke gaya SBV2 | `EMOTION_STYLE` di `app/config.py` |
+| Suara Edge-TTS cadangan | `TTS_VOICE` di `app/config.py` |
 
 ---
 
@@ -313,10 +329,10 @@ Silvia akan dikembangkan bertahap. Berikut arah yang direncanakan:
 - [x] Avatar 3D di browser dengan ekspresi, animasi, dan lip-sync
 - [x] Modul Agent (Tool Calling): membuka aplikasi, membuka URL, dan operasi file sandboxed
 - [x] Sistem keamanan agent: sandbox workspace, alur konfirmasi aksi destruktif, dan audit logging
+- [x] TTS yang lebih ekspresif (Style-Bert-VITS2 lokal model `jvnv-F2-jp` + fallback Edge-TTS)
 - [ ] Ingatan percakapan jangka panjang (memori kontekstual)
 - [ ] Menyela Silvia saat ia sedang berbicara (*voice interruption*)
 - [ ] Kemampuan asisten harian tambahan (kalender, integrasi alarm/pengingat waktu)
-- [ ] TTS yang lebih ekspresif
 - [ ] Opsi deployment sepenuhnya lokal (tanpa API eksternal)
 
 ---

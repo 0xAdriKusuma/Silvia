@@ -9,9 +9,9 @@ import base64
 import json
 import time
 from abc import ABC, abstractmethod
-from typing import Optional
+from typing import Optional, Union
 
-from app.tts import play
+from app.tts import play, AudioClip
 
 
 class BaseSink(ABC):
@@ -28,7 +28,7 @@ class BaseSink(ABC):
         animation: Optional[str],
         jp: str,
         idn: str,
-        audio_bytes: bytes,
+        audio: Union[bytes, AudioClip],
     ):
         """Kirim/putar satu baris balasan."""
 
@@ -60,7 +60,7 @@ class ConsoleSink(BaseSink):
         animation: Optional[str],
         jp: str,
         idn: str,
-        audio_bytes: bytes,
+        audio: Union[bytes, AudioClip],
     ):
         if self._first:
             print(
@@ -73,7 +73,7 @@ class ConsoleSink(BaseSink):
 
         # Putar audio secara blocking di thread executor agar tidak memblokir event loop
         loop = asyncio.get_running_loop()
-        await loop.run_in_executor(None, play, audio_bytes)
+        await loop.run_in_executor(None, play, audio)
 
     async def end_turn(self):
         # Mode konsol: tidak perlu menunggu konfirmasi dari mana pun
@@ -106,9 +106,16 @@ class WebSink(BaseSink):
         animation: Optional[str],
         jp: str,
         idn: str,
-        audio_bytes: bytes,
+        audio: Union[bytes, AudioClip],
     ):
-        audio_b64 = base64.b64encode(audio_bytes).decode("ascii")
+        if isinstance(audio, AudioClip):
+            raw_bytes = audio.data
+            audio_fmt = audio.fmt
+        else:
+            raw_bytes = audio
+            audio_fmt = "mp3"
+
+        audio_b64 = base64.b64encode(raw_bytes).decode("ascii") if raw_bytes else ""
         await self._broadcast(
             {
                 "type": "line",
@@ -117,6 +124,7 @@ class WebSink(BaseSink):
                 "jp": jp,
                 "id": idn,
                 "audio": audio_b64,
+                "audio_format": audio_fmt,
             }
         )
 
