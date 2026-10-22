@@ -111,10 +111,16 @@ class SBV2Engine:
             self._device = "cpu"
 
         # 3. Muat model BERT dan tokenizernya
-        print(f"[SBV2] Memuat BERT model '{self.bert_model}' (unduhan otomatis ke cache HF bila belum ada)...")
+        print(f"[SBV2] Memuat BERT model '{self.bert_model}' pada device={self._device} (unduhan otomatis ke cache HF bila belum ada)...")
         loaded_bert = bert_models.load_model(Languages.JP, pretrained_model_name_or_path=self.bert_model)
         bert_models.load_tokenizer(Languages.JP, pretrained_model_name_or_path=self.bert_model)
-        if self._device == "cpu" and hasattr(loaded_bert, "float"):
+        # Pindahkan BERT ke device yang sama dengan model TTS dan pastikan dtype float32
+        # agar cocok dengan bobot model TTS (mencegah error Half vs float bias di F.conv1d)
+        if hasattr(loaded_bert, "to"):
+            loaded_bert.to(self._device)
+            actual_bert_device = next(loaded_bert.parameters()).device if hasattr(loaded_bert, "parameters") else self._device
+            print(f"[SBV2] BERT berjalan di device: {actual_bert_device}")
+        if hasattr(loaded_bert, "float"):
             loaded_bert.float()
 
 
@@ -166,15 +172,23 @@ class SBV2Engine:
         load_duration = time.perf_counter() - t_start
         self._ready = True
 
-        # 6. Warm-up satu kalimat pendek
-        t_warmup = time.perf_counter()
-        warmup_text = "こんにちは"
-        self.synth(warmup_text, {"style": "Neutral", "style_weight": 1.0, "length": 1.0})
-        warmup_duration = time.perf_counter() - t_warmup
+        # 6. Warm-up dua kalimat: pendek dan panjang (~40 karakter) agar inisialisasi lazy GPU
+        #    tidak mengenai jawaban pertama pengguna
+        warmup_style = {"style": "Neutral", "style_weight": 1.0, "length": 1.0}
+
+        t_wu_short = time.perf_counter()
+        self.synth("こんにちは", warmup_style)
+        dur_wu_short = time.perf_counter() - t_wu_short
+
+        t_wu_long = time.perf_counter()
+        self.synth("バーチャルメモリとは、ハードディスクをRAMとして使う技術だよ。", warmup_style)
+        dur_wu_long = time.perf_counter() - t_wu_long
 
         print(
             f"[SBV2] Model siap digunakan (device={self._device}). "
-            f"Waktu muat: {load_duration:.2f}s, Waktu warm-up: {warmup_duration:.2f}s"
+            f"Waktu muat: {load_duration:.2f}s, "
+            f"Warm-up pendek: {dur_wu_short:.2f}s, "
+            f"Warm-up panjang: {dur_wu_long:.2f}s"
         )
 
     def synth(self, text: str, params: dict | None = None) -> tuple[int, np.ndarray]:

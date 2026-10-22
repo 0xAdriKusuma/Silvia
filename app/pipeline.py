@@ -1,4 +1,4 @@
-"""
+﻿"""
 pipeline.py - Satu giliran: LLM streaming -> TTS -> Sink
 
 respond() menerima sink (ConsoleSink atau WebSink) sebagai parameter,
@@ -13,10 +13,10 @@ from app.config import (
     MAX_HISTORY_MESSAGES,
 )
 from app.llm import load_system_prompt
-from app.tts import parse_line, synth, synth_clip, AudioClip
+from app.tts import parse_line, synth, synth_clip, synth_clip_stream, AudioClip
 from app.sinks import BaseSink, ConsoleSink
 
-# Import agent (opsional — dinonaktifkan jika modul tidak tersedia)
+# Import agent (opsional -- dinonaktifkan jika modul tidak tersedia)
 try:
     import agent as _agent
     _AGENT_AVAILABLE = True
@@ -31,8 +31,8 @@ async def respond(
     sink: BaseSink = None,
     on_line=None,
 ):
-    """LLM streaming -> per baris ke TTS -> emit ke sink, semua berjalan paralel.
-    
+    """LLM streaming -> per baris ke TTS (streaming per potongan) -> emit ke sink.
+
     Args:
         client    : AsyncOpenAI client
         history   : daftar pesan (dimodifikasi in-place)
@@ -47,22 +47,19 @@ async def respond(
             sink.reset_timer()
 
     # ---- Panggil agent sebelum LLM persona ----
-    extra_system_msg: str | None = None
-    agent_result = None
+    extra_system_msg = None
     if _AGENT_AVAILABLE:
         try:
-            # Callback status: kirim "thinking" ke sink saat agent bekerja
             async def _agent_status(state: str):
                 await sink.set_status("thinking")
 
-            # Ambil konfigurasi LLM dari config
             llm_kwargs = {}
             if LLM_REASONING_EFFORT:
                 llm_kwargs["extra_body"] = {"reasoning_effort": LLM_REASONING_EFFORT}
 
             agent_result = await _agent.handle_turn(
                 user_text=user_text,
-                history=history,  # belum ditambah user_text
+                history=history,
                 client=client,
                 model=LLM_MODEL,
                 llm_kwargs=llm_kwargs or None,
@@ -70,7 +67,6 @@ async def respond(
             )
 
             if agent_result.handled:
-                # Susun pesan fakta untuk persona
                 extra_system_msg = (
                     "HASIL AKSI (fakta, jangan diubah/dikarang): "
                     + agent_result.message
@@ -81,13 +77,11 @@ async def respond(
                 )
         except Exception as _e:
             print(f"[AGENT] Error: {_e}")
-            # Jangan hentikan pipeline jika agent error
 
     # ---- Susun pesan untuk LLM persona ----
     system_prompt = load_system_prompt()
     history.append({"role": "user", "content": user_text})
 
-    # Pesan sistem: persona + konteks + (opsional) fakta aksi
     system_content = system_prompt
     if extra_system_msg:
         system_content = system_prompt + "\n\n[KONTEKS AKSI]\n" + extra_system_msg
@@ -95,8 +89,11 @@ async def respond(
     messages = [{"role": "system", "content": system_content}] + history[-MAX_HISTORY_MESSAGES:]
 
     line_q: asyncio.Queue = asyncio.Queue()
+    # Tiap item: (emotion, animation, jp, idn, clip, is_first_chunk)
+    # is_first_chunk=True  -> potongan pertama baris LLM (picu emosi/animasi/subtitle)
+    # is_first_chunk=False -> potongan lanjutan (hanya antrean audio, continuation=true)
     audio_q: asyncio.Queue = asyncio.Queue()
-    reply_lines: list[str] = []
+    reply_lines: list = []
 
     async def llm_producer():
         """Mengonsumsi streaming LLM dan memasukkan baris ke line_q."""
@@ -135,7 +132,12 @@ async def respond(
             await line_q.put(None)
 
     async def tts_worker():
-        """Ambil baris dari line_q, sintesis audio (AudioClip), kirim ke audio_q."""
+        """Ambil baris dari line_q, pecah per potongan, sintesis, kirim ke audio_q.
+
+        Setiap baris LLM dipecah menjadi potongan pendek (via synth_clip_stream).
+        Potongan pertama membawa emosi/animasi/subtitle; potongan lanjutan
+        membawa flag is_first_chunk=False agar sink tidak memicu ulang animasi.
+        """
         try:
             while True:
                 line = await line_q.get()
@@ -144,27 +146,30 @@ async def respond(
                 emotion, animation, jp, idn = parse_line(line)
                 if not jp:
                     continue
-                clip = await synth_clip(jp, emotion)
-                await audio_q.put((emotion, animation, jp, idn, clip))
+
+                chunk_idx = 0
+                async for clip in synth_clip_stream(jp, emotion):
+                    is_first = (chunk_idx == 0)
+                    await audio_q.put((emotion, animation, jp, idn, clip, is_first))
+                    chunk_idx += 1
         finally:
             await audio_q.put(None)
 
     async def player():
-        """Emit setiap baris ke sink secara berurutan."""
-        first = True
+        """Emit setiap potongan ke sink secara berurutan."""
+        first_audio = True
         while True:
             item = await audio_q.get()
             if item is None:
                 break
-            emotion, animation, jp, idn, clip = item
-            if first:
+            emotion, animation, jp, idn, clip, is_first_chunk = item
+            if first_audio:
                 print(f"[TOTAL] suara pertama keluar setelah {time.perf_counter() - t0:.2f} dtk")
-                first = False
-            # Callback kompatibilitas lama (opsional)
-            if on_line:
+                first_audio = False
+            # Callback lama: hanya dipanggil pada potongan pertama per baris
+            if on_line and is_first_chunk:
                 on_line(emotion, animation, jp, idn)
-            # Kirim ke sink (console: cetak+putar; web: broadcast JSON)
-            await sink.emit_line(emotion, animation, jp, idn, clip)
+            await sink.emit_line(emotion, animation, jp, idn, clip, is_first_chunk=is_first_chunk)
 
     await sink.set_status("thinking")
     await asyncio.gather(llm_producer(), tts_worker(), player())

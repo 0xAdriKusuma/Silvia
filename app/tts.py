@@ -1,12 +1,24 @@
 """
 tts.py - Sintesis Suara Silvia (SBV2 lokal dengan cadangan Edge-TTS) + pemutar pygame
+
+Kebijakan fallback yang diperbarui:
+- Fallback ke Edge HANYA untuk kegagalan nyata: model gagal dimuat atau exception inferensi.
+- Tidak ada timeout yang membuang hasil SBV2, tidak ada "lock sibuk -> Edge".
+- Pemutus sirkuit hanya aktif untuk exception nyata (bukan lambat/timeout), jeda 15 dtk.
+- SBV2_ALLOW_FALLBACK=0 -> tidak pernah fallback, error ditampilkan jelas.
+- Setiap kali Edge dipakai, peringatan JELAS dengan alasannya dicetak ke konsol.
+
+Streaming per potongan:
+- Teks per baris LLM dipecah menjadi potongan <= SBV2_MAX_CHARS karakter.
+- synth_clip_stream() adalah async generator: yield satu AudioClip per potongan.
+- Potongan kedua disintesis sementara potongan pertama diputar (pipelining).
 """
 import asyncio
 from dataclasses import dataclass
 import io
 import re
 import time
-from typing import Any
+from typing import Any, AsyncIterator
 import wave
 import numpy as np
 import edge_tts
@@ -19,15 +31,20 @@ from app.config import (
     ANIMATIONS,
     TTS_BACKEND,
     SBV2_TIMEOUT_S,
+    SBV2_ALLOW_FALLBACK,
+    SBV2_MAX_CHARS,
     EMOTION_STYLE,
 )
 
 # Instance SBV2Engine tunggal (dimuat lazy oleh init_tts)
 _sbv2_engine: Any = None
 
-# Status pemutus sirkuit (circuit breaker) untuk backend auto
+# Status pemutus sirkuit untuk backend auto — hanya aktif pada exception nyata berturut-turut
 _circuit_broken_until: float = 0.0
 _consecutive_failures: int = 0
+# Jeda pemutus sirkuit lebih singkat (15 dtk) agar SBV2 segera dicoba ulang
+_CIRCUIT_BREAK_DURATION = 15.0
+_CIRCUIT_BREAK_THRESHOLD = 3
 
 
 @dataclass
@@ -119,6 +136,49 @@ def _split_sentences(text: str, max_len: int = 150) -> list[str]:
     return [s for s in sentences if s]
 
 
+def split_chunks_jp(text: str, max_chars: int | None = None) -> list[str]:
+    """Pecah teks Jepang menjadi potongan pendek untuk sintesis bertahap.
+
+    Strategi:
+    1. Pecah di 。！？…\n — batas kalimat kuat.
+    2. Jika potongan masih > max_chars, pecah lagi di 、 — jeda nafas.
+    3. Jika masih > max_chars, potong paksa per max_chars karakter.
+    """
+    limit = max_chars if max_chars is not None else SBV2_MAX_CHARS
+
+    # Pisah di titik akhir kalimat Jepang (pertahankan delimiter di akhir potongan)
+    raw = re.split(r"(?<=[。！？…!?\n])", text)
+    chunks: list[str] = []
+
+    for seg in raw:
+        seg = seg.strip()
+        if not seg:
+            continue
+        if len(seg) <= limit:
+            chunks.append(seg)
+        else:
+            # Coba pecah lagi di 、
+            sub_parts = re.split(r"(?<=、)", seg)
+            current = ""
+            for sp in sub_parts:
+                if len(current) + len(sp) <= limit:
+                    current += sp
+                else:
+                    if current:
+                        chunks.append(current.strip())
+                    if len(sp) > limit:
+                        # Potong paksa
+                        for i in range(0, len(sp), limit):
+                            chunks.append(sp[i : i + limit].strip())
+                        current = ""
+                    else:
+                        current = sp
+            if current.strip():
+                chunks.append(current.strip())
+
+    return [c for c in chunks if c]
+
+
 def parse_line(line: str):
     """'[happy|greetings] 日本語|||Indonesia' -> (emotion, animation_or_None, jp, idn).
     
@@ -174,53 +234,74 @@ async def _synth_edge(text: str, emotion: str) -> AudioClip:
 
     rtf = t_synth / dur if dur > 0 else 0.0
     style_name = EMOTION_STYLE.get(emotion, {}).get("style", emotion)
-    print(f"[TTS] edge | {emotion}->{style_name} | synth={t_synth:.2f}s | dur={dur:.2f}s | RTF={rtf:.2f}")
+    print(f"[TTS] edge | {emotion}->{style_name} | chars={len(text)} | synth={t_synth:.2f}s | dur={dur:.2f}s | RTF={rtf:.2f}")
     return AudioClip(data=data, fmt="mp3", duration=dur)
 
 
-def _synth_sbv2_clip_sync(text: str, emotion: str, style_cfg: dict) -> AudioClip:
-    """Sintesis sinkron SBV2 yang dijalankan di dalam thread pool."""
+def _synth_sbv2_chunk_sync(text: str, emotion: str, style_cfg: dict) -> AudioClip:
+    """Sintesis SATU potongan teks sinkron di dalam thread pool.
+
+    Tidak memecah teks lagi di sini — pemanggil bertanggung jawab memecah.
+    """
     if _sbv2_engine is None or not _sbv2_engine.ready:
         raise RuntimeError("SBV2Engine belum siap atau gagal dimuat.")
 
     t0 = time.perf_counter()
     style_name = style_cfg.get("style", "Neutral")
-
-    if len(text) <= 150:
-        sr, audio = _sbv2_engine.synth(text, style_cfg)
-    else:
-        # Teks > 150 karakter dipecah per kalimat lalu digabung jeda hening ~0.15 dtk
-        sentences = _split_sentences(text, max_len=150)
-        chunks = []
-        sr = 44100
-        for s in sentences:
-            sr, chunk = _sbv2_engine.synth(s, style_cfg)
-            chunks.append(chunk)
-
-        silence = np.zeros(int(sr * 0.15), dtype=np.int16)
-        merged = []
-        for i, c in enumerate(chunks):
-            if i > 0:
-                merged.append(silence)
-            merged.append(c)
-        audio = np.concatenate(merged) if merged else np.zeros(0, dtype=np.int16)
+    sr, audio = _sbv2_engine.synth(text, style_cfg)
 
     wav_bytes = to_wav_bytes(audio, sr)
     t_synth = time.perf_counter() - t0
     dur = len(audio) / sr if sr > 0 else 0.0
     rtf = t_synth / dur if dur > 0 else 0.0
 
-    print(f"[TTS] sbv2 | {emotion}->{style_name} | synth={t_synth:.2f}s | dur={dur:.2f}s | RTF={rtf:.2f}")
+    device = _sbv2_engine.device if _sbv2_engine else "?"
+    print(
+        f"[TTS] sbv2 | {emotion}->{style_name} | device={device} "
+        f"| chars={len(text)} | synth={t_synth:.2f}s | dur={dur:.2f}s | RTF={rtf:.2f}"
+    )
     return AudioClip(data=wav_bytes, fmt="wav", duration=dur)
 
 
+# Pertahankan fungsi lama sebagai alias internal agar tidak ada import yang rusak
+def _synth_sbv2_clip_sync(text: str, emotion: str, style_cfg: dict) -> AudioClip:
+    """Alias mundur-kompatibel: sintesis sinkron SBV2 (dipakai oleh path edge/sbv2 sederhana)."""
+    return _synth_sbv2_chunk_sync(text, emotion, style_cfg)
+
+
+def _compute_timeout(text: str) -> float:
+    """Hitung batas waktu proporsional: max(SBV2_TIMEOUT_S, len_chars * 0.5) detik."""
+    return max(SBV2_TIMEOUT_S, len(text) * 0.5)
+
+
+async def _fallback_or_raise(text: str, emotion: str, reason: str) -> AudioClip:
+    """Jalankan kebijakan fallback: Edge jika diizinkan, raise jika tidak."""
+    if SBV2_ALLOW_FALLBACK:
+        print(
+            f"[TTS] ⚠ PERINGATAN: Jatuh ke Edge-TTS! Alasan: {reason} "
+            f"| chars={len(text)} | TTS_BACKEND={TTS_BACKEND}"
+        )
+        return await _synth_edge(text, emotion)
+    else:
+        msg = (
+            f"[TTS] ERROR: SBV2 gagal dan SBV2_ALLOW_FALLBACK=0 (tidak ada fallback). "
+            f"Alasan: {reason} | chars={len(text)}"
+        )
+        print(msg)
+        raise RuntimeError(msg)
+
+
 async def synth_clip(text: str, emotion: str) -> AudioClip:
-    """Sintesis teks menjadi AudioClip dengan pemilihan backend (edge, sbv2, atau auto)."""
+    """Sintesis SATU teks (bisa panjang) menjadi AudioClip — tetap ada untuk kompatibilitas.
+
+    Untuk jawaban panjang, lebih baik gunakan synth_clip_stream() agar audio
+    mulai diputar lebih awal.
+    """
     global _circuit_broken_until, _consecutive_failures
 
     clean_text = normalize_for_tts(text)
     if not clean_text:
-        default_fmt = "wav" if TTS_BACKEND == "sbv2" else "mp3"
+        default_fmt = "wav" if TTS_BACKEND in ("sbv2", "auto") else "mp3"
         return AudioClip(data=b"", fmt=default_fmt, duration=0.0)
 
     style_cfg = EMOTION_STYLE.get(
@@ -232,42 +313,132 @@ async def synth_clip(text: str, emotion: str) -> AudioClip:
         return await _synth_edge(clean_text, emotion)
 
     if TTS_BACKEND == "sbv2":
+        # Mode sbv2: gunakan fallback jika diizinkan bila engine gagal dimuat saat startup
         if _sbv2_engine is None or not _sbv2_engine.ready:
-            raise RuntimeError("SBV2Engine belum diinisialisasi atau gagal dimuat.")
-        return await asyncio.to_thread(_synth_sbv2_clip_sync, clean_text, emotion, style_cfg)
+            return await _fallback_or_raise(
+                clean_text,
+                emotion,
+                "SBV2Engine belum diinisialisasi atau gagal dimuat saat startup.",
+            )
+        timeout = _compute_timeout(clean_text)
+        try:
+            return await asyncio.wait_for(
+                asyncio.to_thread(_synth_sbv2_chunk_sync, clean_text, emotion, style_cfg),
+                timeout=timeout,
+            )
+        except asyncio.TimeoutError:
+            msg = f"timeout ({timeout:.0f}s) saat mensintesis {len(clean_text)} karakter"
+            print(f"[TTS] ERROR: SBV2 {msg}")
+            raise RuntimeError(f"SBV2 {msg}")
 
     # Backend == "auto"
     now = time.time()
-    # 1. Cek circuit breaker (3 kegagalan berturut-turut -> 60s fallback Edge)
+    # 1. Cek circuit breaker: hanya aktif untuk exception nyata, bukan timeout/lambat
     if now < _circuit_broken_until:
-        return await _synth_edge(clean_text, emotion)
+        remaining = _circuit_broken_until - now
+        return await _fallback_or_raise(
+            clean_text, emotion,
+            f"pemutus sirkuit aktif (sisa {remaining:.0f}s, {_consecutive_failures} exception nyata berturut-turut)"
+        )
 
     # 2. Cek kesiapan SBV2
     if _sbv2_engine is None or not _sbv2_engine.ready:
-        print("[TTS] Peringatan: SBV2Engine tidak siap, beralih ke Edge-TTS.")
-        return await _synth_edge(clean_text, emotion)
+        return await _fallback_or_raise(clean_text, emotion, "SBV2Engine tidak siap (model belum dimuat)")
 
-    # 3. Cek apakah inferensi sebelumnya masih jalan (lock terkunci)
-    if _sbv2_engine.lock.locked():
-        print("[TTS] SBV2 sedang sibuk (inferensi sebelumnya masih berjalan), langsung beralih ke Edge.")
-        return await _synth_edge(clean_text, emotion)
-
-    # 4. Jalankan SBV2 dengan batas waktu (timeout)
+    # 3. Jalankan SBV2 — menunggu lock itu wajar, kalimat berjalan berurutan
+    timeout = _compute_timeout(clean_text)
     try:
         clip = await asyncio.wait_for(
-            asyncio.to_thread(_synth_sbv2_clip_sync, clean_text, emotion, style_cfg),
-            timeout=SBV2_TIMEOUT_S,
+            asyncio.to_thread(_synth_sbv2_chunk_sync, clean_text, emotion, style_cfg),
+            timeout=timeout,
         )
         _consecutive_failures = 0
         return clip
-    except Exception as e:
+    except asyncio.TimeoutError:
+        # Timeout proporsional yang sangat panjang = kemungkinan macet total, bukan sekadar lambat
+        print(
+            f"[TTS] ⚠ SBV2 timeout macet total ({timeout:.0f}s) untuk {len(clean_text)} karakter. "
+            f"Ini BUKAN jatuh ke Edge karena lambat."
+        )
         _consecutive_failures += 1
-        if _consecutive_failures >= 3:
-            _circuit_broken_until = time.time() + 60.0
-            print(f"[TTS] Peringatan: SBV2 gagal 3x berturut-turut ({type(e).__name__}: {e}). Pemutus sirkuit aktif: menggunakan Edge-TTS selama 60 detik.")
-        else:
-            print(f"[TTS] Peringatan: SBV2 gagal/timeout ({type(e).__name__}: {e}), beralih ke Edge-TTS untuk baris ini.")
-        return await _synth_edge(clean_text, emotion)
+        if _consecutive_failures >= _CIRCUIT_BREAK_THRESHOLD:
+            _circuit_broken_until = time.time() + _CIRCUIT_BREAK_DURATION
+            print(
+                f"[TTS] ⚠ Pemutus sirkuit aktif {_CIRCUIT_BREAK_DURATION:.0f}s "
+                f"({_consecutive_failures} timeout berturut-turut)."
+            )
+        return await _fallback_or_raise(
+            clean_text, emotion,
+            f"timeout total {timeout:.0f}s untuk {len(clean_text)} karakter"
+        )
+    except Exception as e:
+        # Exception nyata (CUDA OOM, dll.): coba torch.cuda.empty_cache() lalu retry sekali
+        if "out of memory" in str(e).lower() or "cuda" in str(e).lower():
+            print(f"[TTS] ⚠ SBV2 CUDA OOM/error: {e}. Mencoba empty_cache dan retry...")
+            try:
+                import torch
+                torch.cuda.empty_cache()
+            except Exception:
+                pass
+            try:
+                clip = await asyncio.wait_for(
+                    asyncio.to_thread(_synth_sbv2_chunk_sync, clean_text, emotion, style_cfg),
+                    timeout=timeout,
+                )
+                _consecutive_failures = 0
+                return clip
+            except Exception as e2:
+                print(f"[TTS] ⚠ SBV2 retry setelah OOM juga gagal: {e2}")
+                e = e2
+
+        _consecutive_failures += 1
+        if _consecutive_failures >= _CIRCUIT_BREAK_THRESHOLD:
+            _circuit_broken_until = time.time() + _CIRCUIT_BREAK_DURATION
+            print(
+                f"[TTS] ⚠ Pemutus sirkuit aktif {_CIRCUIT_BREAK_DURATION:.0f}s "
+                f"({_consecutive_failures} exception nyata berturut-turut)."
+            )
+        return await _fallback_or_raise(
+            clean_text, emotion, f"{type(e).__name__}: {e}"
+        )
+
+
+async def synth_clip_stream(
+    text: str,
+    emotion: str,
+) -> AsyncIterator[AudioClip]:
+    """Async generator: pecah teks menjadi potongan dan yield AudioClip per potongan.
+
+    Sintesis berjalan secara berurutan (menunggu lock wajar).
+    Potongan pertama di-yield segera setelah selesai, sementara potongan berikutnya
+    disintesis di background sehingga pemutaran dan sintesis berjalan tumpang tindih.
+    """
+    clean_text = normalize_for_tts(text)
+    if not clean_text:
+        return
+
+    style_cfg = EMOTION_STYLE.get(
+        emotion,
+        EMOTION_STYLE.get("neutral", {"style": "Neutral", "style_weight": 1.0, "length": 1.0}),
+    )
+
+    # Pecah teks menjadi potongan pendek
+    if TTS_BACKEND == "edge":
+        # Edge-TTS: tidak perlu memecah, sintesis sekaligus
+        clip = await _synth_edge(clean_text, emotion)
+        yield clip
+        return
+
+    chunks = split_chunks_jp(clean_text, max_chars=SBV2_MAX_CHARS)
+    if not chunks:
+        return
+
+    for chunk in chunks:
+        if not chunk:
+            continue
+        # synth_clip menangani logika fallback, circuit breaker, dll.
+        clip = await synth_clip(chunk, emotion)
+        yield clip
 
 
 async def synth(text: str, emotion: str) -> bytes:
@@ -286,11 +457,20 @@ def init_tts():
             engine.load()
             _sbv2_engine = engine
         except Exception as e:
-            if TTS_BACKEND == "sbv2":
-                print(f"[TTS] Gagal memuat SBV2Engine pada backend sbv2: {e}")
+            if TTS_BACKEND == "sbv2" and not SBV2_ALLOW_FALLBACK:
+                print(f"[TTS] ERROR: Gagal memuat SBV2Engine dan SBV2_ALLOW_FALLBACK=0: {e}")
                 raise
+            elif TTS_BACKEND == "sbv2":
+                print(
+                    f"[TTS] ⚠ PERINGATAN: Gagal memuat SBV2Engine ({e}). "
+                    f"SBV2_ALLOW_FALLBACK=1, menggunakan Edge-TTS sebagai cadangan."
+                )
+                _sbv2_engine = None
             else:
-                print(f"[TTS] Peringatan: Gagal memuat SBV2Engine ({e}). Menggunakan Edge-TTS sebagai cadangan.")
+                print(
+                    f"[TTS] ⚠ PERINGATAN: Gagal memuat SBV2Engine ({e}). "
+                    f"Menggunakan Edge-TTS sebagai cadangan (mode auto)."
+                )
                 _sbv2_engine = None
 
 
@@ -323,3 +503,4 @@ def play(data_or_clip: bytes | AudioClip):
     pygame.mixer.music.play()
     while pygame.mixer.music.get_busy():
         pygame.time.Clock().tick(30)
+

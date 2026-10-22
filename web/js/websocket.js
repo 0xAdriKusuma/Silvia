@@ -104,8 +104,20 @@ async function processLineQueue() {
 
     if (item.type !== 'line') continue;
 
-    // Batalkan timer return-neutral dari baris sebelumnya (kritis!)
-    // Tanpa ini, emosi baris berikutnya bisa di-override oleh timer lama.
+    if (item.continuation) {
+      // Potongan lanjutan: hanya putar audio, tidak memicu ulang emosi/animasi/subtitle
+      // Lip-sync tetap berjalan karena Web Audio Analyser berjalan di render loop
+      if (item.audio) {
+        const binStr = atob(item.audio);
+        const buf    = new ArrayBuffer(binStr.length);
+        const view   = new Uint8Array(buf);
+        for (let i = 0; i < binStr.length; i++) view[i] = binStr.charCodeAt(i);
+        await playAudioBuffer(buf);
+      }
+      continue;
+    }
+
+    // Potongan pertama: batalkan timer return-neutral dari baris sebelumnya
     clearTimeout(returnNeutralTimer);
     returnNeutralTimer = null;
 

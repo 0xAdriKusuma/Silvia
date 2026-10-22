@@ -16,7 +16,7 @@ ASSETS_DIR = BASE_DIR / "assets"
 IDLE_FILE = "Idle.vrma"
 
 # Nama file VRM spesifik (kosongkan = ambil .vrm pertama yang ditemukan di ASSETS_DIR)
-VRM_FILE = ""
+VRM_FILE = "assets/silvia.vrm"
 
 # Audio / VAD
 SAMPLE_RATE = 16000
@@ -56,10 +56,25 @@ EMOTION_PROSODY = {
 # Daftar emosi yang valid (disinkronkan dengan kunci EMOTION_PROSODY)
 EMOTIONS = list(EMOTION_PROSODY.keys())
 
-# Konfigurasi backend TTS: "edge", "sbv2", atau "auto" (default "auto")
-TTS_BACKEND = os.getenv("TTS_BACKEND", "auto").lower()
+# Konfigurasi backend TTS: "edge", "sbv2", atau "auto" (default "sbv2")
+# Mode "sbv2"  = SBV2 selalu dipakai, tidak ada fallback ke Edge
+# Mode "auto"  = SBV2 utama, fallback ke Edge hanya untuk kegagalan nyata (exception/OOM)
+# Mode "edge"  = Edge-TTS saja (seperti semula)
+TTS_BACKEND = os.getenv("TTS_BACKEND", "sbv2").lower()
+
+# Izinkan fallback ke Edge-TTS saat SBV2 gagal nyata (exception/OOM)
+# "1" = boleh fallback (default), "0" = tidak pernah fallback (tampilkan error jelas)
+SBV2_ALLOW_FALLBACK = os.getenv("SBV2_ALLOW_FALLBACK", "1").strip() == "1"
+
 SBV2_DEVICE = os.getenv("SBV2_DEVICE", "auto").lower()
-SBV2_TIMEOUT_S = float(os.getenv("SBV2_TIMEOUT_S", "4.0"))
+
+# Batas waktu sintesis pengaman macet total: max(SBV2_TIMEOUT_S, len_chars * 0.5) detik
+# Bukan alasan jatuh ke Edge secara diam-diam; hanya trigger error/peringatan
+SBV2_TIMEOUT_S = float(os.getenv("SBV2_TIMEOUT_S", "30.0"))
+
+# Panjang maksimum potongan teks per sintesis (karakter Jepang)
+# Baris LLM dipecah di 。！？… (lalu 、 jika masih panjang) sebelum disintesis
+SBV2_MAX_CHARS = int(os.getenv("SBV2_MAX_CHARS", "40"))
 SBV2_MODEL_DIR = BASE_DIR / "models" / "sbv2"
 SBV2_REPO = os.getenv("SBV2_REPO", "litagin/style_bert_vits2_jvnv")
 SBV2_MODEL_NAME = os.getenv("SBV2_MODEL_NAME", "jvnv-F2-jp")

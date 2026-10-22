@@ -1,8 +1,15 @@
-"""
+﻿"""
 sinks.py - Abstraksi output pipeline
 
 ConsoleSink: perilaku lama (cetak + play via pygame di Python)
-WebSink    : kirim tiap baris ke browser via WebSocket sebagai JSON+base64 MP3
+WebSink    : kirim tiap potongan ke browser via WebSocket sebagai JSON+base64 audio
+
+Perubahan untuk streaming per potongan:
+- emit_line menerima parameter is_first_chunk (default True untuk kompatibilitas mundur).
+- Potongan pertama (is_first_chunk=True) memicu emosi, animasi, dan subtitle di frontend.
+- Potongan lanjutan (is_first_chunk=False) hanya mengantrikan audio:
+    WebSink: kirim "line" dengan "continuation": True -- frontend hanya putar audio.
+    ConsoleSink: cetak subtitle hanya pada potongan pertama; putar semua potongan.
 """
 import asyncio
 import base64
@@ -29,8 +36,14 @@ class BaseSink(ABC):
         jp: str,
         idn: str,
         audio: Union[bytes, AudioClip],
+        *,
+        is_first_chunk: bool = True,
     ):
-        """Kirim/putar satu baris balasan."""
+        """Kirim/putar satu potongan audio dari satu baris balasan.
+
+        is_first_chunk=True  -> potongan pertama: tampilkan subtitle, picu animasi/emosi.
+        is_first_chunk=False -> potongan lanjutan: hanya putar audio (continuation).
+        """
 
     @abstractmethod
     async def end_turn(self):
@@ -50,7 +63,6 @@ class ConsoleSink(BaseSink):
         self._first = True
 
     async def set_status(self, state: str):
-        # Mode konsol: status hanya dicetak jika state penting
         if state in ("transcribing", "thinking"):
             print(f"[STATUS] {state}...")
 
@@ -61,6 +73,8 @@ class ConsoleSink(BaseSink):
         jp: str,
         idn: str,
         audio: Union[bytes, AudioClip],
+        *,
+        is_first_chunk: bool = True,
     ):
         if self._first:
             print(
@@ -68,23 +82,30 @@ class ConsoleSink(BaseSink):
             )
             self._first = False
 
-        anim_str = f" +{animation}" if animation else ""
-        print(f"  [{emotion}{anim_str}] {jp}\n     -> {idn}")
+        # Cetak subtitle dan metadata hanya pada potongan pertama per baris
+        if is_first_chunk:
+            anim_str = f" +{animation}" if animation else ""
+            print(f"  [{emotion}{anim_str}] {jp}\n     -> {idn}")
 
-        # Putar audio secara blocking di thread executor agar tidak memblokir event loop
+        # Putar semua potongan audio (termasuk lanjutan)
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(None, play, audio)
 
     async def end_turn(self):
-        # Mode konsol: tidak perlu menunggu konfirmasi dari mana pun
         pass
 
 
 class WebSink(BaseSink):
     """Sink web: kirim audio+metadata ke semua klien WebSocket yang terhubung.
-    
+
     Menunggu pesan 'playback_done' dari browser sebelum end_turn() kembali,
     sehingga mic tetap muted sampai semua audio selesai diputar di browser.
+
+    Protokol pesan "line":
+    - Potongan pertama (is_first_chunk=True) : pesan normal tanpa field "continuation".
+    - Potongan lanjutan (is_first_chunk=False): pesan dengan "continuation": True.
+      Frontend yang menerima "continuation": True cukup mengantrikan audio;
+      tidak perlu memicu ulang emosi/animasi/subtitle.
     """
 
     def __init__(self, broadcast_fn, wait_for_done_fn, timeout: float = 60.0):
@@ -107,6 +128,8 @@ class WebSink(BaseSink):
         jp: str,
         idn: str,
         audio: Union[bytes, AudioClip],
+        *,
+        is_first_chunk: bool = True,
     ):
         if isinstance(audio, AudioClip):
             raw_bytes = audio.data
@@ -116,17 +139,23 @@ class WebSink(BaseSink):
             audio_fmt = "mp3"
 
         audio_b64 = base64.b64encode(raw_bytes).decode("ascii") if raw_bytes else ""
-        await self._broadcast(
-            {
-                "type": "line",
-                "emotion": emotion,
-                "animation": animation,
-                "jp": jp,
-                "id": idn,
-                "audio": audio_b64,
-                "audio_format": audio_fmt,
-            }
-        )
+
+        msg = {
+            "type": "line",
+            "emotion": emotion,
+            "animation": animation,
+            "jp": jp,
+            "id": idn,
+            "audio": audio_b64,
+            "audio_format": audio_fmt,
+        }
+
+        # Tandai potongan lanjutan dengan field "continuation": True
+        # Frontend yang belum mendukung field ini akan mengabaikannya (kompatibel mundur)
+        if not is_first_chunk:
+            msg["continuation"] = True
+
+        await self._broadcast(msg)
 
     async def end_turn(self):
         await self._broadcast({"type": "turn_end"})
