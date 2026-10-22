@@ -321,22 +321,6 @@ Daftar emosi dan animasi ada di `app/config.py` (`EMOTION_PROSODY`, `EMOTION_EXP
 
 ---
 
-## Rencana Pengembangan
-
-Silvia akan dikembangkan bertahap. Berikut arah yang direncanakan:
-
-- [x] Percakapan suara di konsol
-- [x] Avatar 3D di browser dengan ekspresi, animasi, dan lip-sync
-- [x] Modul Agent (Tool Calling): membuka aplikasi, membuka URL, dan operasi file sandboxed
-- [x] Sistem keamanan agent: sandbox workspace, alur konfirmasi aksi destruktif, dan audit logging
-- [x] TTS yang lebih ekspresif (Style-Bert-VITS2 lokal model `jvnv-F2-jp` + fallback Edge-TTS)
-- [ ] Ingatan percakapan jangka panjang (memori kontekstual)
-- [ ] Menyela Silvia saat ia sedang berbicara (*voice interruption*)
-- [ ] Kemampuan asisten harian tambahan (kalender, integrasi alarm/pengingat waktu)
-- [ ] Opsi deployment sepenuhnya lokal (tanpa API eksternal)
-
----
-
 ## Catatan
 
 - **Aset:** Pastikan model VRM, animasi VRMA, dan suara yang dipakai adalah milik Anda atau berlisensi yang sesuai. Untuk dipublikasikan, gunakan karakter orisinal.
