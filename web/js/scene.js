@@ -13,9 +13,19 @@ export let controls = null;
 export function initScene() {
   const canvasWrap = document.getElementById('canvas-wrap');
   
-  renderer = new THREE.WebGLRenderer({ antialias: true });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  // WebGLRenderer: antialias aktif untuk menghaluskan helai rambut & mesh VRM anime (cegah crawling artifacts)
+  renderer = new THREE.WebGLRenderer({
+    antialias: true,
+    powerPreference: 'high-performance',
+  });
+  // Batasi pixelRatio maksimal 1.5 untuk menghemat beban fragment shader & GPU fillrate
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
+
+  // Nonaktifkan shadow map karena model tidak memakai bayangan terproyeksi (hemat render pass & VRAM)
+  renderer.shadowMap.enabled = false;
+  // Catatan: Tidak menggunakan postprocessing (langsung render ke canvas framebuffer)
+
   canvasWrap.appendChild(renderer.domElement);
 
   scene = new THREE.Scene();

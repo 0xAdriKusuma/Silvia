@@ -169,7 +169,7 @@ def get_system_stats() -> dict:
                         "--format=csv,noheader,nounits",
                     ],
                     creationflags=flags,
-                    timeout=1.0,
+                    timeout=3.0,
                 ).decode("utf-8", errors="ignore").strip()
 
                 if res:

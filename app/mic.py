@@ -14,6 +14,10 @@ from app.config import (
 )
 
 
+# Batasi PyTorch ke 1 thread CPU untuk Silero VAD agar hemat CPU dan tidak ada thread contention
+torch.set_num_threads(1)
+
+
 class Mic:
     def __init__(self):
         self.q = queue.Queue()
@@ -33,17 +37,19 @@ class Mic:
 
 
 def init_vad():
+    torch.set_num_threads(1)
     return load_silero_vad()
 
 
 def listen_utterance(mic: Mic, vad) -> np.ndarray:
-    """Blok sampai satu ucapan selesai, kembalikan audio float32 16 kHz."""
+    """Blok sampai satu ucapan selesai (blocking I/O tanpa busy-wait), kembalikan audio float32 16 kHz."""
     preroll = deque(maxlen=PREROLL_CHUNKS)
     buf, in_speech, silence_ms = [], False, 0
     vad.reset_states()
 
     while True:
-        chunk = mic.q.get()
+        # Blocking call (block=True) - thread tertidur di condition variable sampai ada audio baru
+        chunk = mic.q.get(block=True)
         prob = vad(torch.from_numpy(chunk), SAMPLE_RATE).item()
         is_speech = prob >= VAD_THRESHOLD
 

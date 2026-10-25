@@ -204,7 +204,26 @@ export function buildDebugPanel({
   onSetEmotion,
   getBlenderState,
   getExprSnapshot,
+  getRenderStats,
+  onSetRenderFps,
 }) {
+  // ── Tombol preset target FPS ──────────────────────────────────────────────
+  const fpsBtns = document.querySelectorAll('#dbg-fps-buttons .dbg-fps-btn');
+  if (fpsBtns.length) {
+    fpsBtns.forEach((btn) => {
+      btn.onclick = () => {
+        const val = Number(btn.dataset.fps);
+        const fpsTarget = val > 0 ? val : null;
+        if (onSetRenderFps) onSetRenderFps(fpsTarget);
+        fpsBtns.forEach((b) => b.classList.remove('dbg-btn-active'));
+        btn.classList.add('dbg-btn-active');
+      };
+      if (btn.dataset.fps === '30') {
+        btn.classList.add('dbg-btn-active');
+      }
+    });
+  }
+
   // ── Tombol animasi ─────────────────────────────────────────────────────────
   const animBtns = document.getElementById('anim-btns');
   animBtns.innerHTML = '';
@@ -288,6 +307,27 @@ export function buildDebugPanel({
     // Hanya update jika panel terbuka
     const panel = document.getElementById('debug-panel');
     if (!panel || panel.classList.contains('hidden')) return;
+
+    // ── Update Statistik Render Three.js ─────────────────────────────────────
+    if (getRenderStats) {
+      const stats = getRenderStats();
+      const elFps = document.getElementById('dbg-actual-fps');
+      const elCalls = document.getElementById('dbg-draw-calls');
+      const elTri = document.getElementById('dbg-triangles');
+      const elPr = document.getElementById('dbg-pixel-ratio');
+      const elTarget = document.getElementById('dbg-target-fps');
+      const elStatus = document.getElementById('dbg-render-status');
+
+      if (elFps) elFps.textContent = `${stats.fps} FPS`;
+      if (elCalls) elCalls.textContent = `${stats.drawCalls} calls`;
+      if (elTri) elTri.textContent = stats.triangles ? stats.triangles.toLocaleString() : '--';
+      if (elPr) elPr.textContent = stats.pixelRatio ? stats.pixelRatio.toFixed(2) : '--';
+      if (elTarget) elTarget.textContent = stats.targetFps ? `${stats.targetFps}` : 'Max';
+      if (elStatus) {
+        elStatus.textContent = stats.isPaused ? 'Dijeda (Tidak Fokus/Tersembunyi)' : 'Aktif';
+        elStatus.style.color = stats.isPaused ? 'var(--warn)' : 'var(--success)';
+      }
+    }
 
     let lines = ['── Bobot Animasi ──'];
     if (getBlenderState) {

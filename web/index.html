@@ -126,6 +126,38 @@
   <!-- Panel uji -->
   <div id="debug-panel" class="hidden">
     <div id="debug-panel-inner">
+      <div class="dbg-section" id="dbg-render-section">
+        <h3>Statistik Render Three.js</h3>
+        <div class="dbg-render-box">
+          <div class="dbg-stat-row">
+            <span>FPS Aktual:</span>
+            <span><strong id="dbg-actual-fps">--</strong> <span class="dbg-stat-target">(Target: <span id="dbg-target-fps">30</span>)</span></span>
+          </div>
+          <div class="dbg-stat-row">
+            <span>Draw Calls:</span>
+            <strong id="dbg-draw-calls">--</strong>
+          </div>
+          <div class="dbg-stat-row">
+            <span>Triangles:</span>
+            <span id="dbg-triangles">--</span>
+          </div>
+          <div class="dbg-stat-row">
+            <span>Pixel Ratio:</span>
+            <span id="dbg-pixel-ratio">--</span>
+          </div>
+          <div class="dbg-stat-row">
+            <span>Status:</span>
+            <span id="dbg-render-status" style="color:var(--success)">Aktif</span>
+          </div>
+        </div>
+        <div class="dbg-fps-presets" id="dbg-fps-buttons">
+          <button class="dbg-btn dbg-fps-btn" data-fps="30">30 FPS</button>
+          <button class="dbg-btn dbg-fps-btn" data-fps="45">45 FPS</button>
+          <button class="dbg-btn dbg-fps-btn" data-fps="60">60 FPS</button>
+          <button class="dbg-btn dbg-fps-btn" data-fps="0">Max</button>
+        </div>
+      </div>
+
       <div class="dbg-section">
         <h3>Animasi</h3>
         <div id="anim-btns" class="btn-grid">

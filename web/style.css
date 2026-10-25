@@ -324,6 +324,51 @@ html, body {
   overflow-y: auto;
 }
 
+/* Statistik Render Three.js di Panel Debug */
+.dbg-render-box {
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--text);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.dbg-stat-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.dbg-stat-row strong {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.dbg-stat-target {
+  font-size: 10px;
+  color: var(--muted);
+  margin-left: 4px;
+}
+
+.dbg-fps-presets {
+  margin-top: 8px;
+  display: flex;
+  gap: 5px;
+}
+
+.dbg-fps-btn {
+  flex: 1;
+  text-align: center;
+  padding: 4px 6px;
+  font-size: 11px;
+}
+
 .dbg-slider-wrap {
   display: flex;
   flex-direction: column;
