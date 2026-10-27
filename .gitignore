@@ -4,6 +4,10 @@
 .env
 .env*.local
 .env.*
+.cache
+.cache*
+*.cache
+*spotify_cache*
 
 # ==========================================
 # Python virtual environment

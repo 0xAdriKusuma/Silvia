@@ -34,6 +34,8 @@ TRIGGER_MODE: str = os.getenv("AGENT_TRIGGER_MODE", "keyword")
 TRIGGER_KEYWORDS: list[str] = [
     # Membuka aplikasi/URL
     "buka", "jalankan", "putar", "launch", "start", "open",
+    # Musik & Media (YouTube / Spotify)
+    "play", "lagu", "musik", "spotify", "youtube", "yt", "pause", "jeda", "lanjutkan", "stop", "next",
     # Operasi file
     "buat", "tulis", "simpan", "create", "write", "save",
     "hapus", "delete", "remove",
@@ -123,6 +125,22 @@ APP_ALLOWLIST: dict[str, dict] = {
     "explorer": {
         "launch": ("exe", "explorer.exe"),
         "aliases": ["explorer", "file explorer", "windows explorer", "penjelajah file"],
+    },
+    "discord": {
+        "launch": ("uri", "discord:"),
+        "aliases": ["discord", "discord app"],
+    },
+    "word": {
+        "launch": ("start", "winword.exe"),
+        "aliases": ["word", "microsoft word", "ms word", "dokumen word"],
+    },
+    "excel": {
+        "launch": ("start", "excel.exe"),
+        "aliases": ["excel", "microsoft excel", "ms excel", "spreadsheet"],
+    },
+    "taskmgr": {
+        "launch": ("exe", "taskmgr.exe"),
+        "aliases": ["task manager", "taskmanager", "taskmgr", "task", "pengelola tugas"],
     },
 }
 

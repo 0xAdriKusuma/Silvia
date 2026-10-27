@@ -1,17 +1,18 @@
 <!DOCTYPE html>
 <html lang="id">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Silvia – Avatar AI Suara</title>
-<meta name="description" content="Avatar AI percakapan Jepang interaktif dengan model VRM 3D.">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css">
 
-<!-- Import map CDN (versi dikunci, jangan ganti ke @latest) -->
-<script type="importmap">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Silvia – Avatar AI Suara</title>
+  <meta name="description" content="Avatar AI percakapan Jepang interaktif dengan model VRM 3D.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+
+  <!-- Import map CDN (versi dikunci, jangan ganti ke @latest) -->
+  <script type="importmap">
 {
   "imports": {
     "three": "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js",
@@ -22,191 +23,196 @@
 }
 </script>
 </head>
+
 <body>
 
-<div id="app">
-  <!-- Kanvas Three.js -->
-  <div id="canvas-wrap"></div>
+  <div id="app">
+    <!-- Kanvas Three.js -->
+    <div id="canvas-wrap"></div>
 
-  <!-- Overlay Mulai (diperlukan untuk membuka AudioContext) -->
-  <div id="overlay-start">
-    <h1>Silvia</h1>
-    <p>Avatar AI percakapan bahasa Jepang.<br>Pastikan headset terpasang agar tidak ada gema.</p>
-    <button id="btn-start">Mulai Berbicara ✦</button>
-    <div id="start-status" style="font-size:12px;color:var(--muted);margin-top:8px"></div>
+    <!-- Overlay Mulai (diperlukan untuk membuka AudioContext) -->
+    <div id="overlay-start">
+      <h1>Silvia</h1>
+      <p>Avatar AI percakapan bahasa Jepang.<br>Pastikan headset terpasang agar tidak ada gema.</p>
+      <button id="btn-start">Mulai Berbicara ✦</button>
+      <div id="start-status" style="font-size:12px;color:var(--muted);margin-top:8px"></div>
+    </div>
+
+    <!-- Live Hardware / PC Resource Monitor (Pojok Kiri Atas) -->
+    <aside id="perf-monitor" class="perf-widget" aria-label="Pemantau Sumber Daya PC">
+      <div class="perf-header">
+        <div class="perf-title-wrap">
+          <span class="perf-pulse"></span>
+          <span class="perf-title">SISTEM LIVE</span>
+        </div>
+        <button id="btn-toggle-perf" class="perf-toggle-btn" title="Kecilkan/Perluas Panel (M)"
+          aria-label="Toggle Tampilan">
+          <span id="perf-toggle-icon">−</span>
+        </button>
+      </div>
+
+      <div id="perf-body" class="perf-body">
+        <!-- CPU Metric -->
+        <div class="perf-row">
+          <div class="perf-meta">
+            <span class="perf-label">CPU</span>
+            <span class="perf-value" id="perf-cpu-val">--%</span>
+          </div>
+          <div class="perf-bar-bg">
+            <div class="perf-bar-fill" id="perf-cpu-bar" style="width: 0%"></div>
+          </div>
+        </div>
+
+        <!-- RAM Metric -->
+        <div class="perf-row">
+          <div class="perf-meta">
+            <span class="perf-label">RAM</span>
+            <span class="perf-value" id="perf-ram-val">-- / -- GB</span>
+          </div>
+          <div class="perf-bar-bg">
+            <div class="perf-bar-fill" id="perf-ram-bar" style="width: 0%"></div>
+          </div>
+        </div>
+
+        <!-- GPU Core Metric -->
+        <div class="perf-row" id="perf-gpu-row">
+          <div class="perf-meta">
+            <span class="perf-label" id="perf-gpu-name" title="NVIDIA GPU">GPU</span>
+            <span class="perf-value" id="perf-gpu-val">--%</span>
+          </div>
+          <div class="perf-bar-bg">
+            <div class="perf-bar-fill" id="perf-gpu-bar" style="width: 0%"></div>
+          </div>
+        </div>
+
+        <!-- VRAM Metric -->
+        <div class="perf-row" id="perf-vram-row">
+          <div class="perf-meta">
+            <span class="perf-label">VRAM</span>
+            <span class="perf-value" id="perf-vram-val">-- / -- MB</span>
+          </div>
+          <div class="perf-bar-bg">
+            <div class="perf-bar-fill" id="perf-vram-bar" style="width: 0%"></div>
+          </div>
+        </div>
+
+        <!-- Footer Info (GPU Temp & FPS) -->
+        <div class="perf-footer">
+          <span id="perf-fps-badge" class="perf-badge">FPS: <strong id="perf-fps-val">--</strong></span>
+          <span id="perf-temp-badge" class="perf-badge" style="display:none">GPU: <strong
+              id="perf-temp-val">--°C</strong></span>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Status + Subtitle -->
+    <div id="hud-bottom">
+      <div id="status-pill" data-state="disconnected">
+        <span id="status-dot"></span>
+        <span id="status-text">Menghubungkan...</span>
+      </div>
+      <div id="user-text"></div>
+      <div id="subtitle">
+        <div id="subtitle-jp"></div>
+        <div id="subtitle-id"></div>
+      </div>
+    </div>
+
+    <!-- Input teks (alternatif mic) -->
+    <div id="text-input-wrap">
+      <input id="text-input" type="text" placeholder="Ketik pesan dan tekan Enter..." autocomplete="off" />
+      <button id="btn-send">Kirim</button>
+    </div>
+
+    <!-- Tombol buka/tutup panel uji -->
+    <button id="btn-debug-toggle" title="Panel Uji (D)">D</button>
+
+    <!-- Panel uji -->
+    <div id="debug-panel" class="hidden">
+      <div id="debug-panel-inner">
+        <div class="dbg-section" id="dbg-render-section">
+          <h3>Statistik Render Three.js</h3>
+          <div class="dbg-render-box">
+            <div class="dbg-stat-row">
+              <span>FPS Aktual:</span>
+              <span><strong id="dbg-actual-fps">--</strong> <span class="dbg-stat-target">(Target: <span
+                    id="dbg-target-fps">30</span>)</span></span>
+            </div>
+            <div class="dbg-stat-row">
+              <span>Draw Calls:</span>
+              <strong id="dbg-draw-calls">--</strong>
+            </div>
+            <div class="dbg-stat-row">
+              <span>Triangles:</span>
+              <span id="dbg-triangles">--</span>
+            </div>
+            <div class="dbg-stat-row">
+              <span>Pixel Ratio:</span>
+              <span id="dbg-pixel-ratio">--</span>
+            </div>
+            <div class="dbg-stat-row">
+              <span>Status:</span>
+              <span id="dbg-render-status" style="color:var(--success)">Aktif</span>
+            </div>
+          </div>
+          <div class="dbg-fps-presets" id="dbg-fps-buttons">
+            <button class="dbg-btn dbg-fps-btn" data-fps="30">30 FPS</button>
+            <button class="dbg-btn dbg-fps-btn" data-fps="45">45 FPS</button>
+            <button class="dbg-btn dbg-fps-btn" data-fps="60">60 FPS</button>
+            <button class="dbg-btn dbg-fps-btn" data-fps="0">Max</button>
+          </div>
+        </div>
+
+        <div class="dbg-section">
+          <h3>Animasi</h3>
+          <div id="anim-btns" class="btn-grid">
+            <span style="font-size:12px;color:var(--muted)">Muat model untuk menampilkan...</span>
+          </div>
+        </div>
+
+        <div class="dbg-section">
+          <h3>Ekspresi / Emosi</h3>
+          <div id="emotion-btns" class="btn-grid">
+            <span style="font-size:12px;color:var(--muted)">Muat model untuk menampilkan...</span>
+          </div>
+        </div>
+
+        <div class="dbg-section">
+          <h3>Slider Mulut (aa)</h3>
+          <div class="dbg-slider-wrap">
+            <div class="dbg-slider-label">
+              <span>aa</span><span id="mouth-val">0%</span>
+            </div>
+            <input id="mouth-slider" type="range" min="0" max="100" value="0">
+          </div>
+        </div>
+
+        <div class="dbg-section">
+          <h3>Kontrol Subtitle</h3>
+          <div class="btn-grid">
+            <button class="dbg-btn" id="btn-toggle-id">Sembunyikan terjemahan</button>
+          </div>
+        </div>
+
+        <div class="dbg-section" id="dbg-slowmo-section">
+          <h3>Kontrol Debug Animasi</h3>
+          <div class="btn-grid">
+            <button class="dbg-btn" id="dbg-btn-slowmo">Slow-mo 0.1×</button>
+          </div>
+        </div>
+
+        <div id="missing-anim-section" class="dbg-section" style="display:none">
+          <h3 style="color:var(--warn)">Animasi Tidak Ditemukan</h3>
+          <div id="missing-anim-list" style="font-size:12px;color:var(--muted);line-height:1.8"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Toast error -->
+    <div id="toast"></div>
   </div>
 
-  <!-- Live Hardware / PC Resource Monitor (Pojok Kiri Atas) -->
-  <aside id="perf-monitor" class="perf-widget" aria-label="Pemantau Sumber Daya PC">
-    <div class="perf-header">
-      <div class="perf-title-wrap">
-        <span class="perf-pulse"></span>
-        <span class="perf-title">SISTEM LIVE</span>
-      </div>
-      <button id="btn-toggle-perf" class="perf-toggle-btn" title="Kecilkan/Perluas Panel (M)" aria-label="Toggle Tampilan">
-        <span id="perf-toggle-icon">−</span>
-      </button>
-    </div>
-
-    <div id="perf-body" class="perf-body">
-      <!-- CPU Metric -->
-      <div class="perf-row">
-        <div class="perf-meta">
-          <span class="perf-label">CPU</span>
-          <span class="perf-value" id="perf-cpu-val">--%</span>
-        </div>
-        <div class="perf-bar-bg">
-          <div class="perf-bar-fill" id="perf-cpu-bar" style="width: 0%"></div>
-        </div>
-      </div>
-
-      <!-- RAM Metric -->
-      <div class="perf-row">
-        <div class="perf-meta">
-          <span class="perf-label">RAM</span>
-          <span class="perf-value" id="perf-ram-val">-- / -- GB</span>
-        </div>
-        <div class="perf-bar-bg">
-          <div class="perf-bar-fill" id="perf-ram-bar" style="width: 0%"></div>
-        </div>
-      </div>
-
-      <!-- GPU Core Metric -->
-      <div class="perf-row" id="perf-gpu-row">
-        <div class="perf-meta">
-          <span class="perf-label" id="perf-gpu-name" title="NVIDIA GPU">GPU</span>
-          <span class="perf-value" id="perf-gpu-val">--%</span>
-        </div>
-        <div class="perf-bar-bg">
-          <div class="perf-bar-fill" id="perf-gpu-bar" style="width: 0%"></div>
-        </div>
-      </div>
-
-      <!-- VRAM Metric -->
-      <div class="perf-row" id="perf-vram-row">
-        <div class="perf-meta">
-          <span class="perf-label">VRAM</span>
-          <span class="perf-value" id="perf-vram-val">-- / -- MB</span>
-        </div>
-        <div class="perf-bar-bg">
-          <div class="perf-bar-fill" id="perf-vram-bar" style="width: 0%"></div>
-        </div>
-      </div>
-
-      <!-- Footer Info (GPU Temp & FPS) -->
-      <div class="perf-footer">
-        <span id="perf-fps-badge" class="perf-badge">FPS: <strong id="perf-fps-val">--</strong></span>
-        <span id="perf-temp-badge" class="perf-badge" style="display:none">GPU: <strong id="perf-temp-val">--°C</strong></span>
-      </div>
-    </div>
-  </aside>
-
-  <!-- Status + Subtitle -->
-  <div id="hud-bottom">
-    <div id="status-pill" data-state="disconnected">
-      <span id="status-dot"></span>
-      <span id="status-text">Menghubungkan...</span>
-    </div>
-    <div id="user-text"></div>
-    <div id="subtitle">
-      <div id="subtitle-jp"></div>
-      <div id="subtitle-id"></div>
-    </div>
-  </div>
-
-  <!-- Input teks (alternatif mic) -->
-  <div id="text-input-wrap">
-    <input id="text-input" type="text" placeholder="Ketik pesan dan tekan Enter..." autocomplete="off" />
-    <button id="btn-send">Kirim</button>
-  </div>
-
-  <!-- Tombol buka/tutup panel uji -->
-  <button id="btn-debug-toggle" title="Panel Uji (D)">D</button>
-
-  <!-- Panel uji -->
-  <div id="debug-panel" class="hidden">
-    <div id="debug-panel-inner">
-      <div class="dbg-section" id="dbg-render-section">
-        <h3>Statistik Render Three.js</h3>
-        <div class="dbg-render-box">
-          <div class="dbg-stat-row">
-            <span>FPS Aktual:</span>
-            <span><strong id="dbg-actual-fps">--</strong> <span class="dbg-stat-target">(Target: <span id="dbg-target-fps">30</span>)</span></span>
-          </div>
-          <div class="dbg-stat-row">
-            <span>Draw Calls:</span>
-            <strong id="dbg-draw-calls">--</strong>
-          </div>
-          <div class="dbg-stat-row">
-            <span>Triangles:</span>
-            <span id="dbg-triangles">--</span>
-          </div>
-          <div class="dbg-stat-row">
-            <span>Pixel Ratio:</span>
-            <span id="dbg-pixel-ratio">--</span>
-          </div>
-          <div class="dbg-stat-row">
-            <span>Status:</span>
-            <span id="dbg-render-status" style="color:var(--success)">Aktif</span>
-          </div>
-        </div>
-        <div class="dbg-fps-presets" id="dbg-fps-buttons">
-          <button class="dbg-btn dbg-fps-btn" data-fps="30">30 FPS</button>
-          <button class="dbg-btn dbg-fps-btn" data-fps="45">45 FPS</button>
-          <button class="dbg-btn dbg-fps-btn" data-fps="60">60 FPS</button>
-          <button class="dbg-btn dbg-fps-btn" data-fps="0">Max</button>
-        </div>
-      </div>
-
-      <div class="dbg-section">
-        <h3>Animasi</h3>
-        <div id="anim-btns" class="btn-grid">
-          <span style="font-size:12px;color:var(--muted)">Muat model untuk menampilkan...</span>
-        </div>
-      </div>
-
-      <div class="dbg-section">
-        <h3>Ekspresi / Emosi</h3>
-        <div id="emotion-btns" class="btn-grid">
-          <span style="font-size:12px;color:var(--muted)">Muat model untuk menampilkan...</span>
-        </div>
-      </div>
-
-      <div class="dbg-section">
-        <h3>Slider Mulut (aa)</h3>
-        <div class="dbg-slider-wrap">
-          <div class="dbg-slider-label">
-            <span>aa</span><span id="mouth-val">0%</span>
-          </div>
-          <input id="mouth-slider" type="range" min="0" max="100" value="0">
-        </div>
-      </div>
-
-      <div class="dbg-section">
-        <h3>Kontrol Subtitle</h3>
-        <div class="btn-grid">
-          <button class="dbg-btn" id="btn-toggle-id">Sembunyikan terjemahan</button>
-        </div>
-      </div>
-
-      <div class="dbg-section" id="dbg-slowmo-section">
-        <h3>Kontrol Debug Animasi</h3>
-        <div class="btn-grid">
-          <button class="dbg-btn" id="dbg-btn-slowmo">🐢 Slow-mo 0.1×</button>
-        </div>
-      </div>
-
-      <div id="missing-anim-section" class="dbg-section" style="display:none">
-        <h3 style="color:var(--warn)">Animasi Tidak Ditemukan</h3>
-        <div id="missing-anim-list" style="font-size:12px;color:var(--muted);line-height:1.8"></div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Toast error -->
-  <div id="toast"></div>
-</div>
-
-<script type="module" src="main.js"></script>
+  <script type="module" src="main.js"></script>
 </body>
+
 </html>

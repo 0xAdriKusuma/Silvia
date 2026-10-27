@@ -112,15 +112,21 @@ def _launch_app(canonical_name: str) -> str:
 )
 async def open_app(name: str) -> str:
     """Buka aplikasi dari allowlist; tolak nama di luar allowlist."""
-    # Validasi enum: nama harus persis salah satu kunci allowlist
-    if name not in APP_ALLOWLIST:
+    target = name.strip().lower()
+    if target not in APP_ALLOWLIST:
+        for canonical, info in APP_ALLOWLIST.items():
+            if target in [a.lower() for a in info.get("aliases", [])]:
+                target = canonical
+                break
+
+    if target not in APP_ALLOWLIST:
         allowed = ", ".join(f"'{k}'" for k in APP_ALLOWLIST.keys())
         return (
             f"ERROR: Aplikasi '{name}' tidak ada dalam allowlist. "
             f"Aplikasi yang diizinkan: {allowed}"
         )
 
-    return _launch_app(name)
+    return _launch_app(target)
 
 
 @tool(

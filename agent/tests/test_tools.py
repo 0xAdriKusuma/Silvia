@@ -264,8 +264,42 @@ class TestOpenApp:
         from agent.tools import apps as apps_module
         monkeypatch.setattr(apps_module.sys, "platform", "linux")
         result = await apps_module.open_app("calculator")
-        # Di non-Windows: error informatif (bukan crash / exception)
         assert isinstance(result, str)
+
+    @pytest.mark.asyncio
+    async def test_open_app_new_apps_registered(self):
+        """Aplikasi baru (discord, word, excel, taskmgr) harus terdaftar di allowlist."""
+        from agent.config import APP_ALLOWLIST
+        for app in ["discord", "word", "excel", "taskmgr"]:
+            assert app in APP_ALLOWLIST
+
+    @pytest.mark.asyncio
+    async def test_open_app_alias_resolution(self, monkeypatch):
+        """Alias seperti 'microsoft word' dan 'task manager' berhasil dipetakan."""
+        from agent.tools import apps as apps_module
+        called = []
+
+        def mock_launch(name):
+            called.append(name)
+            return f"OK: Aplikasi '{name}' berhasil dibuka."
+
+        monkeypatch.setattr(apps_module, "_launch_app", mock_launch)
+
+        res1 = await apps_module.open_app("microsoft word")
+        assert "OK" in res1
+        assert called[-1] == "word"
+
+        res2 = await apps_module.open_app("task manager")
+        assert "OK" in res2
+        assert called[-1] == "taskmgr"
+
+        res3 = await apps_module.open_app("excel")
+        assert "OK" in res3
+        assert called[-1] == "excel"
+
+        res4 = await apps_module.open_app("discord")
+        assert "OK" in res4
+        assert called[-1] == "discord"
 
 
 # ======================== TEST OPEN URL ========================

@@ -23,7 +23,8 @@ Mic -> Silero VAD -> faster-whisper (STT) -> [Agent Tool Calling]* -> LLM Stream
   - **Fallback Otomatis (`auto`) & Circuit Breaker**: Jika model lokal belum tersedia, mengalami timeout, atau sibuk, sistem otomatis jatuh ke Edge-TTS tanpa memutus percakapan. Jika terjadi 3 kali kegagalan berturut-turut, pemutus sirkuit beralih ke Edge-TTS selama 60 detik sebelum mencoba kembali.
   - **Streaming Per Kalimat & Normalisasi Teks**: Normalisasi karakter/emoji otomatis, pemecahan teks panjang (>150 karakter) dengan jeda hening alami ~0.15 dtk, dan pengiriman klip audio WAV/MP3 tanpa memblokir event loop.
 - **Kemampuan Agent (Tool Calling)**:
-  - **Membuka aplikasi**: Membuka program dari allowlist aman (Notepad, Calculator, Paint, File Explorer, Task Manager, VS Code, Browser, Spotify, Discord, dll.).
+  - **Membuka aplikasi**: Membuka program dari allowlist aman (Discord, Microsoft Word, Excel, Task Manager, Google Chrome, Notepad, Calculator, File Explorer, Spotify).
+  - **Pemutar musik & media**: Memutar lagu/video di YouTube & YouTube Music langsung berputar otomatis (gratis tanpa API key), serta kontrol Spotify Web API (play, pause, next).
   - **Membuka URL**: Membuka link web terverifikasi (`http://` dan `https://`) di browser default.
   - **Operasi file sandboxed**: Membuat file baru, membaca file, mendaftar isi folder, dan menghapus file dengan aman di dalam folder `agent/workspace/`.
 - **Keamanan & Guardrails Ketat**:
@@ -40,7 +41,7 @@ Mic -> Silero VAD -> faster-whisper (STT) -> [Agent Tool Calling]* -> LLM Stream
   - **Ekspresi Wajah & Emosi Mandiri**: Morph targets emosi di-lerp dinamis dan dibersihkan otomatis antar kalimat tanpa menempel, terisolasi sempurna dari kedipan otomatis (*auto-blink*) dan gerak mulut suara (*lip-sync* `aa`).
   - **Panel Uji & Debug Lengkap**: Tekan shortcut `D` untuk membuka panel kontrol emosi/animasi, tombol *Uji Beruntun*, mode *Slow-mo 0.1×*, serta HUD pemantau bobot animasi & ekspresi real-time.
 - **Dua mode penggunaan**: Web (avatar 3D interaktif) dan Konsol (suara terminal).
-- **Fallback otomatis**: Jika GPU tidak tersedia, STT Whisper otomatis berjalan di CPU (int8).
+- **Fallback otomatis STT**: Jika GPU tidak tersedia, Whisper (`turbo`, ~800 MB, diunduh otomatis) jatuh ke CPU (int8) dengan model yang sama; tidak ada degradasi diam-diam ke model lebih kecil. Ganti model via `WHISPER_MODEL` di `.env` (mis. `large-v3` untuk akurasi tertinggi, `small` untuk perangkat ringan).
 
 ---
 
@@ -69,10 +70,12 @@ silvia/
 │   │   └── agent_rules.txt # Aturan keamanan sistem agent
 │   ├── tools/           # Definisi alat
 │   │   ├── apps.py      # open_app, open_url
-│   │   └── files.py     # create_file, read_file, list_files, delete_file
+│   │   ├── files.py     # create_file, read_file, list_files, delete_file
+│   │   ├── spotify.py   # play_spotify, pause_spotify, next_spotify
+│   │   └── youtube.py   # play_youtube (autoplay di YouTube / YouTube Music)
 │   ├── workspace/       # Folder sandbox untuk file pengguna
 │   ├── logs/            # Folder log audit (audit.jsonl)
-│   └── tests/           # Suite unit test lengkap (test_safety, test_tools, test_confirm, test_core)
+│   └── tests/           # Suite unit test lengkap (safety, tools, confirm, core, spotify, youtube)
 ├── app/                 # Pipeline Percakapan Suara & Avatar
 │   ├── __init__.py
 │   ├── config.py        # Pengaturan (VAD, STT, LLM, TTS, emosi, animasi)
@@ -180,6 +183,15 @@ AGENT_TRIGGER_MODE=keyword  # "keyword" (hemat biaya/token) atau "always" (selal
 TTS_BACKEND=auto            # "auto" (prioritas SBV2 lokal, cadangan Edge), "sbv2", atau "edge"
 SBV2_DEVICE=auto            # "auto", "cuda", atau "cpu"
 SBV2_TIMEOUT_S=4.0          # Batas waktu sintesis per kalimat (detik) sebelum fallback
+
+# --- Konfigurasi STT (Speech-to-Text) ---
+WHISPER_MODEL=turbo         # "turbo" (cepat & akurat), "large-v3", "medium", "small"
+WHISPER_COMPUTE_TYPE=int8_float16
+
+# --- Konfigurasi Pemutar Musik Spotify (Opsional) ---
+# SPOTIPY_CLIENT_ID=isi_client_id
+# SPOTIPY_CLIENT_SECRET=isi_client_secret
+# SPOTIPY_REDIRECT_URI=http://127.0.0.1:8888/callback
 ```
 
 > [!NOTE]
@@ -233,19 +245,33 @@ python -m pytest
 Anda dapat meminta Silvia menjalankan tugas langsung lewat ucapan suara atau kolom chat web:
 
 ### 1. Membuka Aplikasi & Website
-- *"Silvia, tolong bukakan notepad"* -> Membuka aplikasi Notepad.
+- *"Silvia, buka Discord"* -> Membuka Discord.
+- *"Buka Microsoft Word"* atau *"Buka Word"* -> Membuka Microsoft Word.
+- *"Tolong bukakan Excel"* -> Membuka Microsoft Excel.
+- *"Buka Task Manager"* -> Membuka Pengelola Tugas Windows.
+- *"Bukakan Notepad"* -> Membuka Notepad.
 - *"Jalankan kalkulator dong"* -> Membuka Calculator.
-- *"Buka spotify"* -> Membuka Spotify.
-- *"Buka website https://github.com"* -> Membuka link di browser default.
+- *"Buka Chrome"* -> Membuka browser Google Chrome.
+- *"Buka File Explorer"* -> Membuka Explorer.
+- *"Buka website https://github.com"* -> Membuka link web di browser default.
 
-### 2. Operasi File di Sandbox (`agent/workspace/`)
+### 2. Memutar Musik & Media
+- **YouTube (Gratis & Otomatis Berputar)**:
+  - *"Silvia, putar lagu Hikaru Nara Goose House"* -> Mencari di YouTube dan memutar video secara otomatis (autoplay).
+  - *"Putar musik lofi di YouTube Music"* -> Memutar lagu di platform YouTube Music.
+- **Spotify (Web API)**:
+  - *"Putar spotify lagu Yoasobi Idol"* -> Memutar lagu di aplikasi Spotify via Web API.
+  - *"Jeda musik spotify"* -> Menghentikan sementara pemutaran lagu Spotify.
+  - *"Lagu berikutnya"* -> Melewati ke lagu selanjutnya.
+
+### 3. Operasi File di Sandbox (`agent/workspace/`)
 Semua operasi file dibatasi secara ketat hanya di dalam folder `agent/workspace/`:
 - **Membuat file**: *"Silvia, buat file belanja.txt isinya susu, telur, dan roti"*
 - **Membaca file**: *"Tolong bacakan isi file belanja"* (Silvia otomatis mendeteksi nama file stem tanpa ekstensi).
 - **Melihat isi folder**: *"Lihat daftar file"* atau *"Tampilkan semua file di workspace"*
 - **Menghapus file**: *"Hapus file belanja"*
 
-### 3. Alur Konfirmasi Aksi Berisiko (Safety Guardrail)
+### 4. Alur Konfirmasi Aksi Berisiko (Safety Guardrail)
 Saat Anda meminta menghapus file:
 1. Silvia tidak akan langsung menghapus file, melainkan meminta konfirmasi:
    > *"Apakah kamu yakin ingin menghapus 'belanja.txt'? Katakan 'ya' untuk lanjut atau 'tidak' untuk batal."*
@@ -286,38 +312,11 @@ Contoh:
 ### Panel Uji Debug Frontend
 Saat menjalankan mode Web, tekan tombol **`D`** pada keyboard atau klik ikon **`D`** di pojok kanan bawah untuk membuka panel kontrol interaktif:
 - Menguji seluruh animasi one-shot dan emosi secara manual.
-- **🔁 Uji Beruntun**: Menguji transisi cepat dan pergantian emosi berturut-turut untuk memastikan animasi tidak patah.
-- **🐢 Slow-mo 0.1×**: Memperlambat pergerakan animasi menjadi 10% untuk memeriksa kehalusan interpolasi tulang dan memastikan ketiadaan T-pose flash.
+- **Uji Beruntun**: Menguji transisi cepat dan pergantian emosi berturut-turut untuk memastikan animasi tidak patah.
+- **Slow-mo 0.1×**: Memperlambat pergerakan animasi menjadi 10% untuk memeriksa kehalusan interpolasi tulang dan memastikan ketiadaan T-pose flash.
 - **HUD Bobot Real-Time**: Melihat persentase bobot setiap action animasi ($\sum = 100\%$) dan bobot morph target ekspresi secara langsung.
 
 Daftar emosi dan animasi ada di `app/config.py` (`EMOTION_PROSODY`, `EMOTION_EXPRESSION`, `IDLE_FILE`, dan `ANIMATIONS`). Untuk menambah animasi baru: letakkan file `.vrma` di `assets/`, lalu tambahkan satu entri di `ANIMATIONS`.
-
----
-
-## Pengaturan yang Sering Diubah
-
-| Yang ingin diubah | Lokasi |
-|---|---|
-| Kepribadian dan gaya bicara karakter | `prompts/persona.txt` |
-| Aturan & batasan sistem modul agent | `agent/prompts/agent_rules.txt` |
-| Daftar aplikasi yang boleh dibuka | `APP_ALLOWLIST` di `agent/config.py` |
-| Ekstensi file yang diizinkan | `ALLOWED_EXTENSIONS` di `agent/config.py` |
-| Kata kunci pemicu agent (mode keyword) | `TRIGGER_KEYWORDS` di `agent/config.py` |
-| Waktu kadaluarsa konfirmasi hapus | `CONFIRM_EXPIRY_SECONDS` di `agent/config.py` |
-| Batas karakter pembacaan file | `TOOL_RESULT_MAX_CHARS` di `agent/config.py` |
-| Nama karakter | `CHARACTER_NAME` di `app/config.py` |
-| File animasi idle utama | `IDLE_FILE` di `app/config.py` (`Idle.vrma`) |
-| Kecepatan dan nada suara per emosi | `EMOTION_PROSODY` di `app/config.py` |
-| Pemetaan emosi ke blendshape VRM | `EMOTION_EXPRESSION` di `app/config.py` |
-| Daftar animasi dan kapan dipakai | `ANIMATIONS` di `app/config.py` |
-| Bahasa bicara pengguna (STT) | `STT_LANG` di `app/config.py` (`"id"` atau `"ja"`) |
-| Ukuran model Whisper | `WHISPER_MODEL` di `app/config.py` |
-| Kepekaan deteksi suara | `VAD_THRESHOLD`, `END_SILENCE_MS` di `app/config.py` |
-| Backend TTS (Audio Engine) | `TTS_BACKEND` di `app/config.py` / `.env` (`"auto"`, `"sbv2"`, `"edge"`) |
-| Perangkat inferensi SBV2 | `SBV2_DEVICE` di `app/config.py` / `.env` (`"auto"`, `"cuda"`, `"cpu"`) |
-| Batas waktu inferensi SBV2 | `SBV2_TIMEOUT_S` di `app/config.py` / `.env` |
-| Pemetaan emosi ke gaya SBV2 | `EMOTION_STYLE` di `app/config.py` |
-| Suara Edge-TTS cadangan | `TTS_VOICE` di `app/config.py` |
 
 ---
 

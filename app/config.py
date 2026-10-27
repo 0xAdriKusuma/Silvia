@@ -29,7 +29,8 @@ MAX_SPEECH_S = 30
 PREROLL_CHUNKS = 10                     # Simpan ~320 ms sebelum bicara terdeteksi
 
 # STT
-WHISPER_MODEL = "small"
+WHISPER_MODEL = os.getenv("WHISPER_MODEL", "turbo")       # Alternatif: large-v3, medium, small
+WHISPER_COMPUTE_TYPE = os.getenv("WHISPER_COMPUTE_TYPE", "int8_float16")  # Gunakan float16 jika VRAM longgar
 STT_LANG = "id"                         # Ganti "ja" jika ingin bicara bahasa Jepang
 
 # LLM (OpenAI-compatible: Groq, Gemini, OpenRouter, Ollama, dll.)

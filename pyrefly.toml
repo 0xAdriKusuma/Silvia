@@ -1,0 +1,20 @@
+# File/folder yang akan dicek oleh Pyrefly
+project-includes = [
+    "app",
+    "agent",
+    "main.py",
+]
+
+# File/folder yang dikecualikan (diabaikan agar hemat memori)
+project-excludes = [
+    ".venv",
+    "models",
+    "assets",
+    "web",
+    "tts_samples",
+    "outputs",
+    "**/__pycache__",
+]
+
+# Versi Python yang digunakan
+python-version = "3.12"
