@@ -1,47 +1,27 @@
-# Silvia - Personal AI Assistant
+# Silvia - Personal AI Assistant (Tahap Awal)
 
-**Silvia** adalah personal AI assistant interaktif berbasis suara dengan avatar 3D yang bisa berekspresi, bergerak, dan menggerakkan mulut mengikuti suaranya. Selain percakapan suara alami, Silvia kini dilengkapi dengan **Modul Agent (Tool Calling)** berpengaman ketat untuk menjalankan aksi nyata di komputer pengguna (membuka aplikasi, mengelola file di workspace, membuka web).
-
-Alur kerja intinya:
+**Silvia** adalah personal AI assistant yang masih berada di **tahap awal pengembangan**. Silvia mengobrol lewat suara dengan avatar 3D yang berekspresi, bergerak, dan menggerakkan mulut mengikuti suaranya. Selain itu, Silvia bisa menjalankan aksi sederhana di komputer (membuka aplikasi dan website, memutar musik, mengelola file di folder sandbox) lewat modul agent yang berpengaman.
 
 ```text
-Mic -> Silero VAD -> faster-whisper (STT) -> [Agent Tool Calling]* -> LLM Streaming -> TTS (SBV2 / Edge fallback) -> Web Audio API / Speaker
-                                                   |                                           |
-                                         (aksi sistem & file)                   tag emosi + animasi -> avatar VRM 3D
+Mic -> Silero VAD -> faster-whisper (STT) -> [Agent]* -> LLM Streaming -> TTS (SBV2 / Edge-TTS) -> Speaker / Web Audio
+                                                |                                  |
+                                       (aksi sistem & file)            tag emosi + animasi -> avatar VRM 3D
 ```
-*\*Agent hanya aktif jika ucapan mengandung kata kunci aksi (mode keyword) atau dikonfigurasi selalu aktif.*
+*\*Agent hanya aktif bila ucapan mengandung kata kunci aksi (mode `keyword`) atau diatur selalu aktif.*
 
-> **Status:** prototipe aktif dengan kemampuan tool calling mandiri dan teruji.
+> **Status:** prototipe tahap awal. Fitur dan struktur kode masih dapat berubah.
 
 ---
 
-## Fitur Saat Ini
+## Fitur
 
-- **Percakapan suara dua arah**: Anda berbicara dalam bahasa Indonesia, Silvia membalas dengan suara bahasa Jepang beserta terjemahan Indonesia sebagai subtitle.
-- **Sintesis Suara Berkualitas Tinggi (Style-Bert-VITS2 & Cadangan Edge-TTS)**:
-  - **SBV2 Lokal (Model `jvnv-F2-jp`)**: Suara lokal ekspresif yang diselaraskan dengan emosi (`Happy`, `Sad`, `Angry`, `Surprise`, dll.) menggunakan model Style-Bert-VITS2 dan DeBERTa-v2.
-  - **Fallback Otomatis (`auto`) & Circuit Breaker**: Jika model lokal belum tersedia, mengalami timeout, atau sibuk, sistem otomatis jatuh ke Edge-TTS tanpa memutus percakapan. Jika terjadi 3 kali kegagalan berturut-turut, pemutus sirkuit beralih ke Edge-TTS selama 60 detik sebelum mencoba kembali.
-  - **Streaming Per Kalimat & Normalisasi Teks**: Normalisasi karakter/emoji otomatis, pemecahan teks panjang (>150 karakter) dengan jeda hening alami ~0.15 dtk, dan pengiriman klip audio WAV/MP3 tanpa memblokir event loop.
-- **Kemampuan Agent (Tool Calling)**:
-  - **Membuka aplikasi**: Membuka program dari allowlist aman (Discord, Microsoft Word, Excel, Task Manager, Google Chrome, Notepad, Calculator, File Explorer, Spotify).
-  - **Pemutar musik & media**: Memutar lagu/video di YouTube & YouTube Music langsung berputar otomatis (gratis tanpa API key), serta kontrol Spotify Web API (play, pause, next).
-  - **Membuka URL**: Membuka link web terverifikasi (`http://` dan `https://`) di browser default.
-  - **Operasi file sandboxed**: Membuat file baru, membaca file, mendaftar isi folder, dan menghapus file dengan aman di dalam folder `agent/workspace/`.
-- **Keamanan & Guardrails Ketat**:
-  - **Sandboxing Workspace**: Operasi file terkunci rapat di `agent/workspace/`. Menolak *path traversal* (`..`), path absolut Windows/Unix, drive letters, UNC, device names terlarang Windows (`CON`, `NUL`, dll.), serta ekstensi file berbahaya (`.exe`, `.bat`, `.ps1`, `.lnk`, dll.).
-  - **Konfirmasi Aksi Destruktif**: Operasi berisiko seperti penghapusan file (`delete_file`) **wajib dikonfirmasi** terlebih dahulu oleh pengguna sebelum dieksekusi.
-  - **Recycle Bin**: Penghapusan file menggunakan `send2trash` (tidak langsung dihapus permanen dan tanpa fallback berbahaya).
-  - **Pencegahan Prompt Injection**: Konten file dan data alat diperlakukan murni sebagai data, bukan instruksi yang bisa dieksekusi oleh model persona.
-  - **Audit Logging**: Setiap aksi, argumen, status eksekusi, dan keputusan konfirmasi dicatat dalam format JSON Lines di `agent/logs/audit.jsonl`.
-- **Respons streaming per kalimat**: Balasan LLM langsung dikirim ke TTS kalimat demi kalimat agar jeda menjawab singkat.
-- **Avatar 3D (VRM) Bebas T-Pose & Animasi Mulus**:
-  - **Loop Idle Tanpa Henti**: `Idle.vrma` berjalan terus-menerus sebagai lapisan dasar sejak model dimuat; avatar tidak pernah berdiri kaku seperti patung.
-  - **Sistem `AnimationBlender` Ternormalisasi**: Jumlah seluruh bobot animasi selalu dijaga $\sum w_i = 1.0$, menjamin transisi antar gerakan (*crossfade*) halus tanpa glitch, patah, atau T-pose kilat.
-  - **Normalisasi Track Tulang**: Menyelaraskan seluruh himpunan tulang antar clip VRMA sehingga tidak terjadi *bone snap* ke bind-pose saat berganti animasi.
-  - **Ekspresi Wajah & Emosi Mandiri**: Morph targets emosi di-lerp dinamis dan dibersihkan otomatis antar kalimat tanpa menempel, terisolasi sempurna dari kedipan otomatis (*auto-blink*) dan gerak mulut suara (*lip-sync* `aa`).
-  - **Panel Uji & Debug Lengkap**: Tekan shortcut `D` untuk membuka panel kontrol emosi/animasi, tombol *Uji Beruntun*, mode *Slow-mo 0.1×*, serta HUD pemantau bobot animasi & ekspresi real-time.
-- **Dua mode penggunaan**: Web (avatar 3D interaktif) dan Konsol (suara terminal).
-- **Fallback otomatis STT**: Jika GPU tidak tersedia, Whisper (`turbo`, ~800 MB, diunduh otomatis) jatuh ke CPU (int8) dengan model yang sama; tidak ada degradasi diam-diam ke model lebih kecil. Ganti model via `WHISPER_MODEL` di `.env` (mis. `large-v3` untuk akurasi tertinggi, `small` untuk perangkat ringan).
+- **Percakapan suara**: Anda berbicara bahasa Indonesia, Silvia membalas dengan suara bahasa Jepang dan terjemahan Indonesia sebagai subtitle. Balasan LLM dikirim ke TTS kalimat demi kalimat agar jeda menjawab singkat.
+- **Suara ekspresif**: Style-Bert-VITS2 lokal (model `jvnv-F2-jp`) yang menyesuaikan nada dengan emosi. Edge-TTS menjadi cadangan otomatis bila SBV2 gagal atau tidak tersedia.
+- **Avatar 3D (VRM)** di browser: ekspresi wajah, animasi gerakan (VRMA) dengan transisi mulus, idle yang terus berputar, kedipan otomatis, dan lip-sync dari audio.
+- **Agent (tool calling)**: buka aplikasi dan URL, putar musik (YouTube / YouTube Music, kontrol Spotify), serta buat, baca, daftar, dan hapus file di `agent/workspace/`.
+- **Keamanan agent**: operasi file terkunci di sandbox, aksi berisiko wajib dikonfirmasi, dan setiap aksi dicatat di audit log.
+- **STT akurat**: faster-whisper model `turbo` di GPU. Jika GPU tidak tersedia, otomatis ke CPU (int8) dengan model yang sama.
+- **Dua mode**: Web (avatar 3D) dan Konsol (suara di terminal).
 
 ---
 
@@ -49,279 +29,169 @@ Mic -> Silero VAD -> faster-whisper (STT) -> [Agent Tool Calling]* -> LLM Stream
 
 ```text
 silvia/
-├── main.py              # Titik masuk utama (mode console & web)
-├── .env                 # File environment & API Key (jangan di-commit ke Git)
-├── env.example          # Template konfigurasi environment
-├── requirements.txt     # Daftar dependensi utama
-├── requirements-dev.txt # Dependensi pengujian (pytest, pytest-asyncio)
-├── pytest.ini           # Konfigurasi pengujian pytest
-├── .gitignore           # Aturan pengabaian file Git
-├── README.md            # Dokumentasi proyek
-├── agent/               # Modul Agent (Tool Calling & Keamanan)
-│   ├── __init__.py
-│   ├── config.py        # Pengaturan agent (allowlist app/ekstensi, trigger keywords, batas keamanan)
-│   ├── core.py          # Loop eksekusi agent (LLM tool-use, konfirmasi, penanganan respons)
-│   ├── safety.py        # Guardrails (safe_path, resolve_name, validasi URL, filter trigger)
-│   ├── pending.py       # Manajemen pending actions & kadaluarsa konfirmasi
-│   ├── registry.py      # Registri alat (@tool decorator, skema OpenAPI, validasi argumen)
-│   ├── audit.py         # Pencatat audit log JSONL
-│   ├── cli.py           # CLI mandiri untuk uji coba teks modul agent
-│   ├── prompts/
-│   │   └── agent_rules.txt # Aturan keamanan sistem agent
-│   ├── tools/           # Definisi alat
-│   │   ├── apps.py      # open_app, open_url
-│   │   ├── files.py     # create_file, read_file, list_files, delete_file
-│   │   ├── spotify.py   # play_spotify, pause_spotify, next_spotify
-│   │   └── youtube.py   # play_youtube (autoplay di YouTube / YouTube Music)
-│   ├── workspace/       # Folder sandbox untuk file pengguna
-│   ├── logs/            # Folder log audit (audit.jsonl)
-│   └── tests/           # Suite unit test lengkap (safety, tools, confirm, core, spotify, youtube)
-├── app/                 # Pipeline Percakapan Suara & Avatar
-│   ├── __init__.py
+├── main.py              # Titik masuk (mode konsol & web)
+├── .env                 # API key & pengaturan (jangan di-commit)
+├── env.example          # Template .env
+├── requirements.txt     # Dependensi (requirements-dev.txt untuk pengujian)
+├── app/                 # Pipeline suara & server
 │   ├── config.py        # Pengaturan (VAD, STT, LLM, TTS, emosi, animasi)
-│   ├── cuda_setup.py    # Auto-detection path DLL CUDA di Windows
-│   ├── llm.py           # Klien LLM streaming OpenAI-compatible
-│   ├── mic.py           # Perekaman mic + deteksi suara (Silero VAD)
-│   ├── pipeline.py      # Pipeline paralel: LLM -> TTS -> Audio Sink + Integrasi Agent
-│   ├── server.py        # Server FastAPI + WebSocket untuk mode Web
-│   ├── sinks.py         # Abstraksi audio output (ConsoleSink & WebSink dengan AudioClip)
-│   ├── stt.py           # Transkripsi suara via faster-whisper
-│   ├── tts.py           # Sintesis suara: orkestrator AudioClip, fallback Edge-TTS & normalisasi
-│   └── tts_sbv2.py      # Engine inferensi Style-Bert-VITS2 (SBV2) lokal & auto-download
-├── models/              # Direktori cache model lokal (SBV2 jvnv-F2-jp)
-├── assets/              # Model avatar 3D (.vrm), animasi (.vrma), dan background
-├── prompts/
-│   └── persona.txt      # Prompt karakter & kepribadian Silvia
-├── web/                 # Antarmuka visual 3D (three.js, three-vrm, HTML/CSS/JS)
-│   ├── index.html       # Tampilan web utama, HUD status, dan panel uji debug
-│   ├── main.js          # App entry point & render loop tersinkronisasi presisi
-│   ├── style.css        # Desain antarmuka, status pill, monitor performa, & debug panel
-│   ├── README.md        # Dokumentasi arsitektur frontend web
-│   └── js/
-│       ├── animation.js # AnimationBlender (normalisasi bobot & crossfade mulus)
-│       ├── avatar.js    # Loader VRM & VRMA, normalisasi track tulang, filter ekspresi
-│       ├── expressions.js # Manajemen emosi, auto-blink, & morph target
-│       ├── audio.js     # Web Audio API, AnalyserNode, & lip-sync RMS
-│       ├── scene.js     # Three.js Scene, Camera, OrbitControls, Lighting
-│       ├── ui.js        # Subtitle dua baris, HUD performa, & interaksi debug panel
-│       └── websocket.js # Koneksi WebSocket & antrean audio playback
+│   ├── mic.py           # Mikrofon + deteksi suara (Silero VAD)
+│   ├── stt.py           # Transkripsi (faster-whisper)
+│   ├── llm.py           # Klien LLM streaming (OpenAI-compatible)
+│   ├── tts.py           # Orkestrator TTS, fallback Edge-TTS, normalisasi teks
+│   ├── tts_sbv2.py      # Engine Style-Bert-VITS2 lokal + unduh model otomatis
+│   ├── pipeline.py      # Alur paralel: LLM -> TTS -> output (+ integrasi agent)
+│   ├── sinks.py         # Output audio (konsol & WebSocket)
+│   ├── server.py        # Server FastAPI + WebSocket (mode web)
+│   └── cuda_setup.py    # Deteksi DLL CUDA di Windows
+├── agent/               # Modul agent
+│   ├── config.py        # Allowlist aplikasi/ekstensi, kata kunci pemicu, batas
+│   ├── core.py          # Loop agent (tool calling, konfirmasi)
+│   ├── safety.py        # Guardrail (path aman, validasi URL)
+│   ├── registry.py      # Registri alat (@tool)
+│   ├── pending.py       # Aksi yang menunggu konfirmasi
+│   ├── audit.py         # Audit log (JSON Lines)
+│   ├── cli.py           # Uji agent lewat teks
+│   ├── tools/           # apps, files, spotify, youtube
+│   ├── workspace/       # Sandbox file pengguna
+│   ├── logs/            # audit.jsonl
+│   └── tests/           # Unit test
+├── web/                 # Antarmuka avatar (three.js + three-vrm)
+│   ├── index.html, main.js, style.css
+│   └── js/              # animation, avatar, expressions, audio, scene, ui, websocket
+├── prompts/persona.txt  # Kepribadian karakter
+├── models/              # Cache model lokal (SBV2)
+└── assets/              # Model VRM, animasi VRMA
 ```
 
 ---
 
-## Persiapan dan Instalasi
+## Instalasi
 
-### 1. Prasyarat
-- Python 3.10+ (disarankan memakai virtual environment)
-- Mikrofon dan speaker / headset (**disarankan headset** agar suara Silvia tidak masuk lagi ke mikrofon)
-- Koneksi internet (untuk LLM via API dan Edge-TTS)
-- GPU NVIDIA (opsional, untuk Whisper yang lebih cepat dengan CUDA)
-
-### 2. Buat Virtual Environment & Pasang Dependensi
+**Prasyarat:** Python 3.10+, mikrofon, dan headset (disarankan agar suara Silvia tidak terdengar kembali oleh mikrofon). Butuh internet untuk LLM via API. GPU NVIDIA bersifat opsional tetapi membuat STT dan SBV2 jauh lebih cepat.
 
 ```bash
-# Buat dan aktifkan virtual environment
 python -m venv .venv
-.\.venv\Scripts\activate   # Windows
-# source .venv/bin/activate # Linux / macOS
-
-# Install dependensi utama
+.\.venv\Scripts\activate        # Windows  (Linux/macOS: source .venv/bin/activate)
 pip install -r requirements.txt
 ```
 
-> **Catatan untuk Akselerasi GPU (CUDA):**
-> Jika ingin memakai GPU untuk `Silero VAD` & `faster-whisper`:
-> ```bash
-> # Pasang PyTorch CUDA (contoh cu121):
-> pip install torch --index-url https://download.pytorch.org/whl/cu121
->
-> # Pasang library cuBLAS & cuDNN jika diperlukan:
-> pip install nvidia-cublas-cu12 nvidia-cudnn-cu12
-> ```
-> *Jika GPU tidak tersedia atau gagal dimuat, sistem otomatis beralih ke mode CPU (int8).*
+**Untuk GPU (CUDA):**
+
+```bash
+pip install torch --index-url https://download.pytorch.org/whl/cu121
+pip install nvidia-cublas-cu12 nvidia-cudnn-cu12   # jika muncul error cublas/cudnn
+```
+Jika GPU tidak tersedia atau gagal dimuat, STT otomatis beralih ke CPU (int8).
 
 ---
 
 ## Konfigurasi `.env`
 
-Salin file `env.example` ke `.env`:
-
 ```bash
-cp env.example .env      # Linux/macOS
-# atau di Windows PowerShell:
-Copy-Item env.example .env
+Copy-Item env.example .env      # PowerShell  (Linux/macOS: cp env.example .env)
 ```
 
-Buka `.env` dan sesuaikan konfigurasinya:
-
 ```ini
-# --- Penyedia LLM Persona & Agent ---
-# Opsi 1: Groq (sangat cepat & ada kuota gratis)
+# --- LLM (persona & agent) ---
 LLM_API_KEY=gsk_xxxxxxxxxxxxxxxxxxxx
 LLM_BASE_URL=https://api.groq.com/openai/v1
-LLM_MODEL=openai/gpt-oss-120b
-# Model alternatif: llama-3.3-70b-versatile atau openai/gpt-oss-20b
-LLM_REASONING_EFFORT=low
+LLM_MODEL=openai/gpt-oss-120b      # alternatif lebih cepat: openai/gpt-oss-20b
+LLM_REASONING_EFFORT=low           # hanya untuk model reasoning (GPT-OSS); kosongkan untuk model lain
 
-# Opsi 2: Google Gemini (OpenAI-compatible)
-# LLM_API_KEY=AIzaxxxxxxxxxxxxxxxxxx
-# LLM_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai/
-# LLM_MODEL=gemini-2.0-flash
-# LLM_REASONING_EFFORT=
+# Alternatif: Gemini  -> LLM_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai/
+#                        LLM_MODEL=gemini-2.0-flash
+# Alternatif: Ollama  -> LLM_BASE_URL=http://localhost:11434/v1  (LLM_API_KEY=ollama)
 
-# Opsi 3: Ollama lokal (tanpa internet untuk LLM)
-# LLM_API_KEY=ollama
-# LLM_BASE_URL=http://localhost:11434/v1
-# LLM_MODEL=qwen2.5:3b
-# LLM_REASONING_EFFORT=
+# --- Agent ---
+AGENT_ENABLED=1                    # 1 = aktif, 0 = nonaktif
+AGENT_TRIGGER_MODE=keyword         # "keyword" (hemat token) atau "always"
 
-# --- Konfigurasi Modul Agent (Tool Calling) ---
-AGENT_ENABLED=1             # 1 = aktif (default), 0 = nonaktif
-AGENT_TRIGGER_MODE=keyword  # "keyword" (hemat biaya/token) atau "always" (selalu cek tool)
+# --- TTS ---
+TTS_BACKEND=auto                   # "auto" (SBV2, cadangan Edge), "sbv2", atau "edge"
+SBV2_DEVICE=auto                   # "auto", "cuda", atau "cpu"
+SBV2_TIMEOUT_S=4.0                 # batas waktu sintesis per kalimat (detik)
 
-# --- Konfigurasi TTS (Text-to-Speech) ---
-TTS_BACKEND=auto            # "auto" (prioritas SBV2 lokal, cadangan Edge), "sbv2", atau "edge"
-SBV2_DEVICE=auto            # "auto", "cuda", atau "cpu"
-SBV2_TIMEOUT_S=4.0          # Batas waktu sintesis per kalimat (detik) sebelum fallback
-
-# --- Konfigurasi STT (Speech-to-Text) ---
-WHISPER_MODEL=turbo         # "turbo" (cepat & akurat), "large-v3", "medium", "small"
+# --- STT ---
+WHISPER_MODEL=turbo                # "turbo", "large-v3", "medium", atau "small"
 WHISPER_COMPUTE_TYPE=int8_float16
 
-# --- Konfigurasi Pemutar Musik Spotify (Opsional) ---
+# --- Spotify (opsional) ---
 # SPOTIPY_CLIENT_ID=isi_client_id
 # SPOTIPY_CLIENT_SECRET=isi_client_secret
 # SPOTIPY_REDIRECT_URI=http://127.0.0.1:8888/callback
 ```
-
-> [!NOTE]
-> Nama model di penyedia API sering berganti atau dihentikan. Jika muncul error `model_not_found` (404), cek daftar model terbaru di dashboard penyedia lalu ubah `LLM_MODEL`. `LLM_REASONING_EFFORT=low` hanya untuk model *reasoning* seperti GPT-OSS; kosongkan untuk model lain.
-> Pada eksekusi pertama dengan `TTS_BACKEND=auto` atau `sbv2`, sistem akan mengunduh model SBV2 (`jvnv-F2-jp`, ~251 MB) dan DeBERTa-v2 secara otomatis ke folder lokal/cache.
-
-> [!IMPORTANT]
-> Jangan unggah `.env` ke publik/GitHub karena berisi API Key rahasia Anda. File ini sudah ditambahkan ke [.gitignore](.gitignore).
-
 ---
 
 ## Cara Menjalankan
 
-### 1. Mode Web (Rekomendasi - Avatar 3D VRM + Agent)
-Menjalankan server FastAPI lokal sekaligus antarmuka avatar interaktif di browser:
+**Mode Web (rekomendasi, avatar 3D + agent):**
 
 ```bash
 python main.py --web
 ```
-Setelah server berjalan, buka browser di:
-**[http://127.0.0.1:8000](http://127.0.0.1:8000)**
+Buka **http://127.0.0.1:8000**. Browser memblokir audio sebelum ada interaksi, jadi klik halaman sekali bila suara belum terdengar.
 
-> *Browser memblokir pemutaran audio sebelum ada interaksi. Klik area halaman sekali jika suara belum terdengar.*
-
-### 2. Mode Konsol (Terminal Suara Only)
-Menjalankan percakapan suara interaktif langsung di terminal:
+**Mode Konsol (suara saja):**
 
 ```bash
 python main.py
 ```
-*Gunakan headset saat berbicara agar audio speaker tidak masuk kembali ke mikrofon.*
 
-### 3. Uji Manual Modul Agent via Teks (CLI Tester)
-Menguji kemampuan agent secara mandiri melalui teks terminal tanpa perlu mic/TTS/avatar:
+**Pengembangan:**
 
 ```bash
-python -m agent.cli
-```
-
-### 4. Menjalankan Unit Test (Pytest)
-Memverifikasi fungsionalitas dan keamanan seluruh modul agent:
-
-```bash
-python -m pytest
+python -m agent.cli     # uji agent lewat teks, tanpa mic/TTS/avatar
+python -m pytest        # jalankan unit test
 ```
 
 ---
 
-## Menggunakan Kemampuan Agent
+## Menggunakan Agent
 
-Anda dapat meminta Silvia menjalankan tugas langsung lewat ucapan suara atau kolom chat web:
+Minta langsung lewat suara atau kolom chat di web:
 
-### 1. Membuka Aplikasi & Website
-- *"Silvia, buka Discord"* -> Membuka Discord.
-- *"Buka Microsoft Word"* atau *"Buka Word"* -> Membuka Microsoft Word.
-- *"Tolong bukakan Excel"* -> Membuka Microsoft Excel.
-- *"Buka Task Manager"* -> Membuka Pengelola Tugas Windows.
-- *"Bukakan Notepad"* -> Membuka Notepad.
-- *"Jalankan kalkulator dong"* -> Membuka Calculator.
-- *"Buka Chrome"* -> Membuka browser Google Chrome.
-- *"Buka File Explorer"* -> Membuka Explorer.
-- *"Buka website https://github.com"* -> Membuka link web di browser default.
+| Tujuan | Contoh ucapan |
+|---|---|
+| Buka aplikasi | "Buka Discord", "Buka Chrome", "Jalankan kalkulator" |
+| Buka website | "Buka website https://github.com" |
+| Musik YouTube | "Putar lagu Hikaru Nara Goose House", "Putar musik lofi di YouTube Music" |
+| Spotify (butuh API Spotify) | "Putar spotify lagu Yoasobi Idol", "Jeda musik spotify", "Lagu berikutnya" |
+| File di `agent/workspace/` | "Buat file belanja.txt isinya susu, telur, dan roti", "Bacakan isi file belanja", "Lihat daftar file", "Hapus file belanja" |
 
-### 2. Memutar Musik & Media
-- **YouTube (Gratis & Otomatis Berputar)**:
-  - *"Silvia, putar lagu Hikaru Nara Goose House"* -> Mencari di YouTube dan memutar video secara otomatis (autoplay).
-  - *"Putar musik lofi di YouTube Music"* -> Memutar lagu di platform YouTube Music.
-- **Spotify (Web API)**:
-  - *"Putar spotify lagu Yoasobi Idol"* -> Memutar lagu di aplikasi Spotify via Web API.
-  - *"Jeda musik spotify"* -> Menghentikan sementara pemutaran lagu Spotify.
-  - *"Lagu berikutnya"* -> Melewati ke lagu selanjutnya.
+Aplikasi yang diizinkan (allowlist): Discord, Microsoft Word, Excel, Task Manager, Google Chrome, Notepad, Calculator, File Explorer, dan Spotify.
 
-### 3. Operasi File di Sandbox (`agent/workspace/`)
-Semua operasi file dibatasi secara ketat hanya di dalam folder `agent/workspace/`:
-- **Membuat file**: *"Silvia, buat file belanja.txt isinya susu, telur, dan roti"*
-- **Membaca file**: *"Tolong bacakan isi file belanja"* (Silvia otomatis mendeteksi nama file stem tanpa ekstensi).
-- **Melihat isi folder**: *"Lihat daftar file"* atau *"Tampilkan semua file di workspace"*
-- **Menghapus file**: *"Hapus file belanja"*
-
-### 4. Alur Konfirmasi Aksi Berisiko (Safety Guardrail)
-Saat Anda meminta menghapus file:
-1. Silvia tidak akan langsung menghapus file, melainkan meminta konfirmasi:
-   > *"Apakah kamu yakin ingin menghapus 'belanja.txt'? Katakan 'ya' untuk lanjut atau 'tidak' untuk batal."*
-2. Jawab dengan tegas:
-   - **Afirmatif**: *"Ya"*, *"Iya"*, *"Oke"*, *"Silakan"* -> File dipindahkan ke Recycle Bin (`send2trash`).
-   - **Negatif**: *"Tidak"*, *"Batal"*, *"Jangan"* -> Aksi dibatalkan.
-   - **Ambigu**: *"Mungkin saja"* -> Silvia akan meminta penegasan ulang.
-   - **Kadaluarsa**: Jika tidak dijawab dalam 60 detik (default), konfirmasi otomatis dibatalkan.
-   - **Instruksi Baru**: Jika Anda langsung memberi perintah baru (mis. *"buka paint"*), permintaan hapus lama otomatis dibatalkan dan perintah baru diproses.
+**Keamanan:**
+- Operasi file hanya di `agent/workspace/`. Path traversal (`..`), path absolut, nama perangkat terlarang Windows, dan ekstensi berbahaya (`.exe`, `.bat`, `.ps1`, `.lnk`, dll.) ditolak.
+- **Penghapusan file wajib dikonfirmasi.** Silvia menyebut nama file lengkap dan menunggu jawaban: "ya/iya/oke/silakan" melanjutkan (file dipindah ke Recycle Bin via `send2trash`), "tidak/batal/jangan" membatalkan, jawaban ambigu diminta ulang. Konfirmasi kedaluwarsa setelah 60 detik, dan perintah baru otomatis membatalkan permintaan lama.
+- Isi file dan hasil alat diperlakukan sebagai data, bukan instruksi.
+- Setiap aksi dicatat di `agent/logs/audit.jsonl`.
 
 ---
 
-## Cara Kerja Emosi dan Animasi
+## Emosi dan Animasi
 
-Silvia membalas dalam format satu kalimat per baris dengan dua tag di depannya:
+Silvia membalas satu kalimat per baris dengan dua tag di depannya:
 
 ```text
 [emosi|animasi] kalimat Jepang|||terjemahan Indonesia
-```
-
-Contoh:
-
-```text
 [shy|blush] そ、そんなこと言われたら照れちゃうよ…|||K-kalau dibilang begitu aku jadi malu...
 [neutral|none] えっと、今日は何したの？|||Hmm, hari ini kamu ngapain aja?
 ```
 
-- **Emosi** mengatur ekspresi wajah dan nada suara (kecepatan dan tinggi nada TTS).
-- **Animasi** adalah gerakan badan dari file `.vrma`. Nilai `none` berarti tidak ada gerakan khusus (hanya idle).
-- Bagian Jepang dibacakan TTS, bagian Indonesia hanya tampil sebagai subtitle.
-- Tag yang salah atau tidak dikenal diperlakukan aman: emosi menjadi `neutral`, animasi diabaikan.
+- **Emosi** mengatur ekspresi wajah dan nada suara. **Animasi** adalah gerakan badan dari file `.vrma`; `none` berarti hanya idle.
+- Bagian Jepang dibacakan TTS, bagian Indonesia tampil sebagai subtitle.
+- Tag yang salah atau tidak dikenal diperlakukan aman (emosi jadi `neutral`, animasi diabaikan).
+- `Idle.vrma` berputar terus sebagai lapisan dasar. Animasi lain masuk dan keluar dengan crossfade, jadi avatar tidak kembali ke T-pose di antara gerakan. Jika `Idle.vrma` tidak ditemukan, dipakai idle prosedural.
 
-### Sistem Lapisan Animasi (Base Idle vs One-Shot)
-1. **Lapisan Dasar (Idle)**: File `Idle.vrma` dimuat dan diloop tanpa henti dengan bobot awal 1.0. Jika file tidak ditemukan, fallback ke idle prosedural pernapasan otomatis aktif.
-2. **Animasi Sekali-Putar (One-Shot)**: Saat kalimat memiliki tag animasi (misalnya `[happy|clapping]`), `AnimationBlender` menaikkan bobot animasi clapping ke 1.0 secara mulus (*fade-in* 0.3 detik) sambil menurunkan bobot idle. Sebelum animasi selesai (*blend-out* 0.5 detik), bobot idle otomatis dinaikkan kembali ke 1.0 secara mulus tanpa pernah terjadi T-pose.
-3. **Pembersihan Ekspresi**: Setiap kalimat baru dimulai, ekspresi kalimat sebelumnya langsung di-lerp turun dengan cepat (`EXPR_FALL_SPEED = 14.0/s`) menuju nilai emosi baru. Mulut (*lip-sync*) dan mata (*auto-blink*) beroperasi pada jalur terpisah sehingga tidak saling mengunci.
+**Panel uji (mode Web):** tekan **`D`** untuk membuka panel berisi tombol tiap animasi dan emosi, uji beruntun, mode slow-mo 0.1×, dan HUD bobot animasi serta ekspresi.
 
-### Panel Uji Debug Frontend
-Saat menjalankan mode Web, tekan tombol **`D`** pada keyboard atau klik ikon **`D`** di pojok kanan bawah untuk membuka panel kontrol interaktif:
-- Menguji seluruh animasi one-shot dan emosi secara manual.
-- **Uji Beruntun**: Menguji transisi cepat dan pergantian emosi berturut-turut untuk memastikan animasi tidak patah.
-- **Slow-mo 0.1×**: Memperlambat pergerakan animasi menjadi 10% untuk memeriksa kehalusan interpolasi tulang dan memastikan ketiadaan T-pose flash.
-- **HUD Bobot Real-Time**: Melihat persentase bobot setiap action animasi ($\sum = 100\%$) dan bobot morph target ekspresi secara langsung.
-
-Daftar emosi dan animasi ada di `app/config.py` (`EMOTION_PROSODY`, `EMOTION_EXPRESSION`, `IDLE_FILE`, dan `ANIMATIONS`). Untuk menambah animasi baru: letakkan file `.vrma` di `assets/`, lalu tambahkan satu entri di `ANIMATIONS`.
+**Menambah animasi:** letakkan file `.vrma` di `assets/`, lalu tambahkan satu entri di `ANIMATIONS` pada `app/config.py` (daftar emosi dan ekspresi juga ada di file itu).
 
 ---
 
 ## Catatan
 
-- **Aset:** Pastikan model VRM, animasi VRMA, dan suara yang dipakai adalah milik Anda atau berlisensi yang sesuai. Untuk dipublikasikan, gunakan karakter orisinal.
-- **Privasi:** Audio mikrofon diproses secara lokal di komputer Anda. Teks hasil transkripsi dikirim ke penyedia LLM yang Anda pilih, dan teks balasan dikirim ke layanan Edge-TTS (membutuhkan internet).
-
+- **Aset:** pastikan model VRM, animasi VRMA, dan suara yang dipakai adalah milik Anda atau berlisensi yang sesuai. Untuk dipublikasikan, gunakan karakter orisinal.
+- **Lisensi model suara:** `jvnv-F2-jp` berlisensi CC BY-SA 4.0 (sumber: `litagin/style_bert_vits2_jvnv` di Hugging Face). Baca model card untuk ketentuan atribusi sebelum dipublikasikan.
+- **Privasi:** audio mikrofon diproses di komputer Anda. Teks hasil transkripsi dikirim ke penyedia LLM yang Anda pilih, dan teks balasan dikirim ke Edge-TTS hanya saat cadangan itu dipakai.
