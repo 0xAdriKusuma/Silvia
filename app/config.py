@@ -28,6 +28,27 @@ MIN_SPEECH_MS = 400                     # Ucapan lebih pendek diabaikan (noise)
 MAX_SPEECH_S = 30
 PREROLL_CHUNKS = 10                     # Simpan ~320 ms sebelum bicara terdeteksi
 
+# Push-to-Talk / Listen Mode
+# LISTEN_MODE: 'toggle' (default) = satu klik satu ucapan + VAD end
+#              'hold'             = dengarkan selama tombol ditahan
+#              'always'           = perilaku lama (mic selalu terbuka)
+LISTEN_MODE = os.getenv("LISTEN_MODE", "toggle").lower()
+
+# LISTEN_TIMEOUT_S: waktu (dtk) menunggu awal ucapan di mode toggle sebelum berhenti sendiri
+LISTEN_TIMEOUT_S = float(os.getenv("LISTEN_TIMEOUT_S", "8"))
+
+# LISTEN_HOTKEY: hotkey keyboard untuk mulai/berhenti mendengarkan (default: Space)
+LISTEN_HOTKEY = os.getenv("LISTEN_HOTKEY", "Space")
+
+# MIC_KEEP_OPEN: 0 = tutup stream saat idle (indikator OS mati, lebih privat, default)
+#               1 = stream tetap terbuka tapi frame dibuang (kurangi latensi buka stream)
+MIC_KEEP_OPEN = int(os.getenv("MIC_KEEP_OPEN", "0"))
+
+# LISTEN_AUTO_ARM_ON_CONFIRM: 1 = setelah agent menghasilkan needs_confirmation,
+#   otomatis mulai mendengarkan satu ucapan (jawaban ya/tidak) tanpa tekan tombol
+#   0 = selalu perlu tombol
+LISTEN_AUTO_ARM_ON_CONFIRM = int(os.getenv("LISTEN_AUTO_ARM_ON_CONFIRM", "1"))
+
 # STT
 WHISPER_MODEL = os.getenv("WHISPER_MODEL", "turbo")       # Alternatif: large-v3, medium, small
 WHISPER_COMPUTE_TYPE = os.getenv("WHISPER_COMPUTE_TYPE", "int8_float16")  # Gunakan float16 jika VRAM longgar

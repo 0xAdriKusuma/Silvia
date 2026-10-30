@@ -195,3 +195,25 @@ Silvia membalas satu kalimat per baris dengan dua tag di depannya:
 - **Aset:** pastikan model VRM, animasi VRMA, dan suara yang dipakai adalah milik Anda atau berlisensi yang sesuai. Untuk dipublikasikan, gunakan karakter orisinal.
 - **Lisensi model suara:** `jvnv-F2-jp` berlisensi CC BY-SA 4.0 (sumber: `litagin/style_bert_vits2_jvnv` di Hugging Face). Baca model card untuk ketentuan atribusi sebelum dipublikasikan.
 - **Privasi:** audio mikrofon diproses di komputer Anda. Teks hasil transkripsi dikirim ke penyedia LLM yang Anda pilih, dan teks balasan dikirim ke Edge-TTS hanya saat cadangan itu dipakai.
+
+---
+
+## Push-to-Talk (Kontrol Mikrofon)
+
+Atur variabel `LISTEN_MODE` di `.env` (default: `toggle`):
+
+| Mode | Cara kerja |
+|------|-----------|
+| `toggle` | Satu klik tombol atau tekan `Space` = mikrofon terbuka untuk **satu ucapan**. VAD mendeteksi akhir ucapan otomatis. Diam >8 detik = kembali idle sendiri. Klik lagi saat mendengarkan = batal. |
+| `hold` | **Tahan** tombol atau tahan `Space` = mikrofon merekam; **lepas** = audio dikirim ke STT tanpa menunggu VAD. Tekan <0.3 dtk diabaikan dengan petunjuk UI. |
+| `always` | Perilaku lama: mic selalu mendengarkan. Tombol disembunyikan di UI. |
+
+**Variabel terkait** (lihat `env.example` untuk deskripsi lengkap):
+- `LISTEN_TIMEOUT_S` – batas waktu tunggu awal ucapan di mode `toggle` (default: 8 dtk)
+- `LISTEN_HOTKEY` – hotkey keyboard (default: `Space`; bisa `F1`, `KeyQ`, dll.)
+- `MIC_KEEP_OPEN` – `0` (default): stream mikrofon ditutup saat idle → **indikator mic OS mati, privat**; `1`: stream tetap terbuka tapi frame dibuang → kurangi latensi pembukaan stream, tapi **indikator mic OS tetap menyala**.
+- `LISTEN_AUTO_ARM_ON_CONFIRM` – `1` (default): setelah Silvia meminta konfirmasi (mis. "hapus file?"), mikrofon otomatis terbuka untuk jawaban "ya/tidak" tanpa perlu menekan tombol lagi.
+
+**Mode konsol:** mode `toggle` menampilkan "Tekan Enter untuk bicara". Mode `hold` di konsol diperlakukan sebagai `toggle` (log peringatan). Mode `always` seperti semula.
+
+**Privasi (saat idle):** dengan `MIC_KEEP_OPEN=0` (default), tidak ada audio yang ditangkap maupun dikirim ke STT selama status idle. Indikator mikrofon OS akan mati.

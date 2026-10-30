@@ -33,7 +33,7 @@
     <!-- Overlay Mulai (diperlukan untuk membuka AudioContext) -->
     <div id="overlay-start">
       <h1>Silvia</h1>
-      <p>Avatar AI percakapan bahasa Jepang.<br>Pastikan headset terpasang agar tidak ada gema.</p>
+      <p>Avatar AI percakapan bahasa Jepang.<br>Klik tombol mikrofon atau tekan <kbd>Space</kbd> untuk mulai bicara.</p>
       <button id="btn-start">Mulai Berbicara ✦</button>
       <div id="start-status" style="font-size:12px;color:var(--muted);margin-top:8px"></div>
     </div>
@@ -116,6 +116,22 @@
         <div id="subtitle-jp"></div>
         <div id="subtitle-id"></div>
       </div>
+    </div>
+
+    <!-- Tombol Mikrofon Push-to-Talk -->
+    <div id="mic-btn-wrap">
+      <button
+        id="btn-mic"
+        aria-label="Mulai berbicara"
+        aria-pressed="false"
+        title="Klik untuk berbicara (Space)"
+        style="touch-action: none;"
+      >
+        <svg id="mic-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="28" height="28">
+          <path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.93V20H9v2h6v-2h-2v-2.07A7 7 0 0 0 19 11h-2z"/>
+        </svg>
+      </button>
+      <div id="mic-hint"></div>
     </div>
 
     <!-- Input teks (alternatif mic) -->

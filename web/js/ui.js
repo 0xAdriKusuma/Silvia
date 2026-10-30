@@ -28,8 +28,9 @@ const perfTempBadge = document.getElementById('perf-temp-badge');
 const perfTempVal   = document.getElementById('perf-temp-val');
 
 const STATUS_LABELS = {
+  idle:         'Mikrofon mati',
   listening:    'Mendengarkan...',
-  transcribing: 'Mentranskripsi...',
+  transcribing: 'Memproses...',
   thinking:     'Berpikir...',
   speaking:     'Berbicara...',
   disconnected: 'Terputus – menyambung kembali...',
@@ -62,6 +63,22 @@ export function showToast(msg) {
   toast.classList.add('visible');
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => toast.classList.remove('visible'), 5000);
+}
+
+/** Tampilkan petunjuk kecil di bawah tombol mic (dikosongkan otomatis setelah delay). */
+let micHintTimer = null;
+export function showMicHint(msg, { warn = false, duration = 3500 } = {}) {
+  const el = document.getElementById('mic-hint');
+  if (!el) return;
+  el.textContent = msg;
+  el.classList.toggle('hint-warn', warn);
+  clearTimeout(micHintTimer);
+  if (duration > 0) {
+    micHintTimer = setTimeout(() => {
+      el.textContent = '';
+      el.classList.remove('hint-warn');
+    }, duration);
+  }
 }
 
 export function updateFps(fps) {

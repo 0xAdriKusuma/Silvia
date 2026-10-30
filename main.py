@@ -4,16 +4,16 @@ Avatar AI Suara - Titik Masuk Utama
 Mode konsol  : python main.py
 Mode web     : python main.py --web   -> buka http://127.0.0.1:8000
 
-Alur konsol:
-  Mic -> Silero VAD -> faster-whisper (STT)
-      -> LLM streaming -> Edge-TTS -> speaker (pygame)
+Alur konsol (mode toggle/hold/always):
+  Mode toggle/hold: tekan Enter -> Mic -> VAD/rekam -> faster-whisper (STT)
+                    -> LLM streaming -> Edge-TTS -> speaker (pygame)
+  Mode always     : seperti semula, mic selalu mendengarkan.
 
 Alur web:
-  Mic -> Silero VAD -> faster-whisper (STT)
+  Tombol UI / hotkey -> Mic -> Silero VAD -> faster-whisper (STT)
       -> LLM streaming -> Edge-TTS -> WebSocket -> browser (Web Audio API)
 """
 import argparse
-import sys
 
 from app.cuda_setup import setup_cuda_dll_dirs
 
@@ -22,13 +22,12 @@ setup_cuda_dll_dirs()
 
 
 def run_console():
-    """Mode konsol: perilaku lama, tidak ada perubahan."""
+    """Mode konsol dengan dukungan push-to-talk."""
     import asyncio
     import time
-    import pygame
-    import sounddevice as sd
+    import threading
 
-    from app.config import SAMPLE_RATE, CHUNK, LLM_API_KEY
+    from app.config import SAMPLE_RATE, CHUNK, LLM_API_KEY, LISTEN_MODE
     from app.mic import Mic, init_vad, listen_utterance
     from app.stt import load_whisper, transcribe
     from app.llm import get_llm_client
@@ -38,6 +37,13 @@ def run_console():
 
     if not LLM_API_KEY:
         raise SystemExit("LLM_API_KEY belum diisi. Salin env.example menjadi .env lalu isi kuncinya.")
+
+    # Mode hold tidak didukung di konsol: log peringatan, perlakukan sebagai toggle
+    effective_mode = LISTEN_MODE
+    if LISTEN_MODE == "hold":
+        print("[PERINGATAN] LISTEN_MODE=hold tidak didukung di mode konsol; "
+              "menggunakan 'toggle' sebagai gantinya.")
+        effective_mode = "toggle"
 
     init_player()
     print("[VAD] memuat Silero VAD...")
@@ -54,31 +60,97 @@ def run_console():
     history: list = []
     sink = ConsoleSink(loop=loop)
 
-    print("\nSiap! Bicara ke mikrofon (Ctrl+C untuk keluar). Pakai headset agar tidak ada gema.\n")
-    try:
-        with sd.InputStream(
-            samplerate=SAMPLE_RATE,
-            channels=1,
-            dtype="float32",
-            blocksize=CHUNK,
-            callback=mic.callback,
-        ):
-            while True:
-                audio = listen_utterance(mic, vad)
-                mic.muted = True  # jangan dengarkan selama memproses & berbicara
-                try:
-                    t = time.perf_counter()
-                    text = transcribe(whisper, audio)
-                    if not text:
+    if effective_mode == "always":
+        # ── Mode always: perilaku lama ────────────────────────────────────────
+        import sounddevice as sd
+        print("\nSiap! Bicara ke mikrofon (Ctrl+C untuk keluar). Pakai headset agar tidak ada gema.\n")
+        try:
+            with sd.InputStream(
+                samplerate=SAMPLE_RATE,
+                channels=1,
+                dtype="float32",
+                blocksize=CHUNK,
+                callback=mic.callback,
+            ):
+                while True:
+                    audio = listen_utterance(mic, vad)
+                    if audio is None:
                         continue
-                    print(f"\n[Kamu] ({time.perf_counter() - t:.2f} dtk STT) {text}")
-                    sink.reset_timer()
-                    loop.run_until_complete(respond(client, history, text, sink=sink))
-                except Exception as e:
-                    print(f"[ERROR] {type(e).__name__}: {e}")
-                finally:
-                    mic.drain()
-                    mic.muted = False
+                    mic.muted = True
+                    try:
+                        t = time.perf_counter()
+                        text = transcribe(whisper, audio)
+                        if not text:
+                            continue
+                        print(f"\n[Kamu] ({time.perf_counter() - t:.2f} dtk STT) {text}")
+                        sink.reset_timer()
+                        loop.run_until_complete(respond(client, history, text, sink=sink))
+                    except Exception as e:
+                        print(f"[ERROR] {type(e).__name__}: {e}")
+                    finally:
+                        mic.drain()
+                        mic.muted = False
+        except KeyboardInterrupt:
+            print("\nSampai jumpa!")
+        finally:
+            quit_player()
+        return
+
+    # ── Mode toggle: tekan Enter untuk satu ucapan ───────────────────────────
+    print("\nSiap! Tekan Enter untuk bicara, Ctrl+C untuk keluar.\n")
+    try:
+        while True:
+            try:
+                input("[ Enter = mulai bicara ] ")
+            except EOFError:
+                break
+
+            cancel_event = threading.Event()
+
+            # Buka stream mikrofon
+            mic.start()
+            print("  🎤 Mendengarkan... (Enter lagi = batal)")
+
+            # Thread pemantau Enter untuk batal
+            def _wait_cancel(evt=cancel_event):
+                try:
+                    input()
+                    evt.set()
+                except EOFError:
+                    pass
+            cancel_thread = threading.Thread(target=_wait_cancel, daemon=True)
+            cancel_thread.start()
+
+            from app.config import LISTEN_TIMEOUT_S
+            audio = listen_utterance(
+                mic, vad,
+                cancel_event=cancel_event,
+                timeout_s=LISTEN_TIMEOUT_S,
+            )
+            mic.stop()
+
+            if audio is None:
+                if cancel_event.is_set():
+                    print("  ✖ Dibatalkan.")
+                else:
+                    print("  ⏱ Tidak ada suara – kembali idle.")
+                continue
+
+            mic.muted = True
+            try:
+                t = time.perf_counter()
+                text = transcribe(whisper, audio)
+                if not text:
+                    continue
+                print(f"\n[Kamu] ({time.perf_counter() - t:.2f} dtk STT) {text}")
+                sink.reset_timer()
+                loop.run_until_complete(respond(client, history, text, sink=sink))
+            except Exception as e:
+                print(f"[ERROR] {type(e).__name__}: {e}")
+            finally:
+                mic.drain()
+                mic.muted = False
+
     except KeyboardInterrupt:
         print("\nSampai jumpa!")
     finally:

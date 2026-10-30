@@ -1,4 +1,4 @@
-﻿"""
+"""
 sinks.py - Abstraksi output pipeline
 
 ConsoleSink: perilaku lama (cetak + play via pygame di Python)

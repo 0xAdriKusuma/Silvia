@@ -30,7 +30,7 @@ import {
   getExpressionSnapshot,
 } from './js/expressions.js';
 import { initAudioContext, updateLipSync, setManualMouth, audioCtx } from './js/audio.js';
-import { connectWS, sendWS } from './js/websocket.js';
+import { connectWS, sendWS, initMicButton } from './js/websocket.js';
 import {
   initUIListeners,
   buildDebugPanel,
@@ -262,6 +262,9 @@ async function init() {
 
   // 7. Hubungkan WebSocket
   connectWS();
+
+  // 8. Inisialisasi tombol mikrofon push-to-talk
+  initMicButton(appConfig);
 
   document.getElementById('start-status').textContent = 'Siap!';
 }
